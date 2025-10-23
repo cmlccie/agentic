@@ -16,7 +16,7 @@ dev = [
 # Component Dependency Groups
 # --------------------------------------------------------------------------------------
 
-tools_mcp_weather = [
+tools_mcp_weather_server = [
     "mcp[cli]>=1.16.0",
     "pandas>=2.3.3",
     "pydantic>=2.11.7",

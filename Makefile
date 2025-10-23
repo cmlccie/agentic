@@ -19,7 +19,7 @@ upgrade: ## Upgrade dependencies to latest versions
 	uv sync --upgrade --all-groups
 
 	# Exporting updated Dependencies
-	uv export -f requirements.txt --group tools_mcp_weather -o tools/mcp/weather_server/requirements.txt
+	uv export --only-group tools_mcp_weather_server --format requirements.txt -o tools/mcp/weather_server/requirements.txt
 
 clean: ## Remove temporary and build artifacts
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
