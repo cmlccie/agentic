@@ -1,0 +1,24 @@
+name: Build MCP Weather Server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "tools/mcp/weather_server/**"
+      - ".github/workflows/build-tools-mcp-weather-server.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "tools/mcp/weather_server/**"
+      - ".github/workflows/build-tools-mcp-weather-server.yml"
+  release:
+    types: [published]
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-python-container-image.yml
+    with:
+      image-name: tools-mcp-weather-server
+      context-path: ./tools/mcp/weather_server
