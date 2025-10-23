@@ -4,142 +4,54 @@ applyTo: ".github/workflows/*.yml"
 
 # GitHub Actions Workflow Instructions
 
-## Container Build Workflows
+## Python Container Build Workflows
 
 ### Naming Convention
 
-- Use `build-<service-name>.yml` for container build workflows
+- Use `build-<image-name>.yml` for container build workflows
 - Use descriptive names that clearly identify the service being built
 
-### Workflow Triggers
+### Using the Reusable Workflow
 
-Configure appropriate triggers for the workflow:
+For Python container builds, use the reusable workflow `.github/workflows/build-python-container-image.yml`.
 
-```yaml
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - "<service-path>/**"
-      - ".github/workflows/<workflow-file>.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "<service-path>/**"
-      - ".github/workflows/<workflow-file>.yml"
-  release:
-    types: [published]
-```
+### Required Inputs
 
-### Environment Variables
+- **image-name**: The name of the container image (will be prefixed with repository name)
+- **context-path**: Path to the build context relative to repository root
 
-```yaml
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/<service-name>
-```
+### Optional Inputs
 
-### Required Permissions
+- **containerfile-path**: Path to the Containerfile relative to context-path (defaults to "Containerfile")
+- **platforms**: Target platforms for the build (defaults to "linux/amd64,linux/arm64")
 
-```yaml
-permissions:
-  contents: read
-  packages: write
-  id-token: write
-  attestations: write
-```
+### Example Workflow
 
-### Essential Workflow Steps
+See `.github/workflows/build-tools-mcp-weather-server.yml` for a complete working example of a Python container build workflow using the reusable workflow.
 
-1. **Repository Checkout**
+### Benefits of the Reusable Workflow
 
-   ```yaml
-   - name: Checkout repository
-     uses: actions/checkout@v4
-   ```
-
-2. **Docker Buildx Setup**
-
-   ```yaml
-   - name: Set up Docker Buildx
-     uses: docker/setup-buildx-action@v3
-   ```
-
-3. **Registry Login**
-
-   ```yaml
-   - name: Log in to Container Registry
-     uses: docker/login-action@v3
-     with:
-       registry: ${{ env.REGISTRY }}
-       username: ${{ github.actor }}
-       password: ${{ secrets.GITHUB_TOKEN }}
-   ```
-
-4. **Metadata Extraction**
-
-   ```yaml
-   - name: Extract metadata
-     id: meta
-     uses: docker/metadata-action@v5
-     with:
-       images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-       tags: |
-         type=ref,event=branch
-         type=ref,event=pr
-         type=semver,pattern={{version}}
-         type=semver,pattern={{major}}.{{minor}}
-         type=semver,pattern={{major}}
-         type=sha,prefix={{branch}}-
-         type=raw,value=latest,enable={{is_default_branch}}
-   ```
-
-5. **Build and Push**
-
-   ```yaml
-   - name: Build and push Docker image
-     id: build
-     uses: docker/build-push-action@v5
-     with:
-       context: ./<service-path>
-       platforms: linux/amd64,linux/arm64
-       push: true
-       tags: ${{ steps.meta.outputs.tags }}
-       labels: ${{ steps.meta.outputs.labels }}
-       cache-from: type=gha
-       cache-to: type=gha,mode=max
-   ```
-
-6. **Build Attestation**
-   ```yaml
-   - name: Generate artifact attestation
-     uses: actions/attest-build-provenance@v1
-     with:
-       subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-       subject-digest: ${{ steps.build.outputs.digest }}
-       push-to-registry: true
-   ```
+- **Consistency**: All Python container builds use the same standardized process
+- **Maintainability**: Updates to the build process only need to be made in one place
+- **Best Practices**: Automatically includes security features like build attestations
+- **Performance**: Built-in caching and multi-platform support
 
 ### Image Tagging Strategy
 
-- Use semantic versioning patterns for releases
-- Include branch names for development builds
-- Add commit SHA for traceability
-- Use `latest` tag only for default branch builds
-- Support both AMD64 and ARM64 architectures when possible
+The reusable workflow automatically handles image tagging with:
 
-### Performance Optimization
+- Semantic versioning patterns for releases (`{{version}}`, `{{major}}.{{minor}}`, `{{major}}`)
+- Branch names for development builds (`{{branch}}`)
+- Commit SHA for traceability (`{{branch}}-{{sha}}`)
+- `latest` tag only for default branch builds
+- Pull request references for PR builds
 
-- Enable GitHub Actions caching for Docker layers
-- Use path filters to trigger builds only when relevant files change
-- Use multi-platform builds for broader compatibility
-- Leverage Docker BuildKit features for faster builds
+### Automatic Features
 
-### Security Considerations
+The reusable workflow includes:
 
-- Use build attestations for supply chain security
-- Limit workflow permissions to minimum required
-- Use GitHub's built-in GITHUB_TOKEN for authentication
-- Pin action versions to specific commits or tags
+- **Multi-platform builds**: Supports both AMD64 and ARM64 architectures by default
+- **GitHub Actions caching**: Optimizes build performance with layer caching
+- **Build attestations**: Provides supply chain security
+- **Proper permissions**: Includes all necessary permissions for container registry operations
+- **Registry authentication**: Automatically handles GitHub Container Registry login
