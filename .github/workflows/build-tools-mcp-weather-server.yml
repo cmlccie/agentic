@@ -16,6 +16,12 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
 jobs:
   build:
     uses: ./.github/workflows/build-python-container-image.yml
