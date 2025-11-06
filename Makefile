@@ -19,6 +19,7 @@ upgrade: ## Upgrade dependencies to latest versions
 	uv sync --upgrade --all-groups
 
 	# Exporting updated Dependencies
+	uv export --only-group agents_weather_agent --format requirements.txt -o agents/weather_agent/requirements.txt
 	uv export --only-group tools_mcp_weather_server --format requirements.txt -o tools/mcp/weather_server/requirements.txt
 
 clean: ## Remove temporary and build artifacts
@@ -46,6 +47,9 @@ check: lint ## Run all checks (lint + format check)
 # -------------------------------------------------------------------------------------------------
 # Build Targets
 # -------------------------------------------------------------------------------------------------
+
+agents-weather-agent: ## Build the Weather Agent
+	podman build -f agents/weather_agent/Containerfile -t agents-weather-agent:latest agents/weather_agent/
 
 tools-mcp-weather-server: ## Build the MCP Weather Server
 	podman build -f tools/mcp/weather_server/Containerfile -t tools-mcp-weather-server:latest tools/mcp/weather_server/

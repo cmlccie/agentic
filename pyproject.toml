@@ -16,6 +16,10 @@ dev = [
 # Component Dependency Groups
 # --------------------------------------------------------------------------------------
 
+agents_weather_agent = [
+    "pydantic-ai-slim[a2a,mcp,openai]>=1.3.0",
+]
+
 tools_mcp_weather_server = [
     "mcp[cli]>=1.16.0",
     "pandas>=2.3.3",
