@@ -25,7 +25,7 @@ OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 # -------------------------------------------------------------------------------------------------
 
 # Create an MCP server
-mcp = FastMCP("Demo")
+mcp = FastMCP("MCP Weather Server", host="0.0.0.0", port=8000)
 
 
 # --------------------------------------------------------------------------------------
