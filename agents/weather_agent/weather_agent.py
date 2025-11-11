@@ -14,7 +14,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStreamableHTTP
-from pydantic_ai.messages import AssistantMessage, UserMessage
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    SystemPromptPart,
+    TextPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.result import StreamedRunResult
 from rich.console import Console
@@ -147,6 +154,18 @@ class Message(BaseModel):
     role: Literal["system", "user", "assistant"]
     content: str
 
+    def to_model_message(self) -> ModelMessage:
+        """Convert to Pydantic AI ModelMessage."""
+        match self.role:
+            case "system":
+                return ModelRequest(parts=[SystemPromptPart(content=self.content)])
+            case "user":
+                return ModelRequest(parts=[UserPromptPart(content=self.content)])
+            case "assistant":
+                return ModelResponse(parts=[TextPart(content=self.content)])
+            case _:
+                raise ValueError(f"Unknown role: {self.role}")
+
 
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request."""
@@ -221,15 +240,11 @@ async def generate_stream(
     user_message = request.messages[-1].content if request.messages else ""
 
     # Get message history (all messages except the last user message)
-    message_history = None
-    if len(request.messages) > 1:
-        message_history = [
-            UserMessage(role=msg.role, content=msg.content)
-            if msg.role == "user"
-            else AssistantMessage(role=msg.role, content=msg.content)
-            for msg in request.messages[:-1]
-            if msg.role in ["user", "assistant"]
-        ]
+    message_history = (
+        [msg.to_model_message() for msg in request.messages[:-1]]
+        if len(request.messages) > 1
+        else None
+    )
 
     # Stream the response
     first_chunk = True
@@ -297,6 +312,8 @@ async def chat_completions(request: ChatCompletionRequest):
 
     Supports both streaming and non-streaming responses.
     """
+    assert request.messages, "Messages are required"
+
     completion_id = f"chatcmpl-{int(time.time() * 1000)}"
     created = int(time.time())
 
@@ -315,8 +332,13 @@ async def chat_completions(request: ChatCompletionRequest):
     else:
         # Non-streaming response
         agent = create_agent()
-        user_message = request.messages[-1].content if request.messages else ""
-        result = await agent.run(user_message)
+        user_message = request.messages[-1].content
+        message_history = (
+            [msg.to_model_message() for msg in request.messages[:-1]]
+            if len(request.messages) > 1
+            else None
+        )
+        result = await agent.run(user_message, message_history=message_history)
         usage_info = result.usage()
 
         response = ChatCompletionResponse(
