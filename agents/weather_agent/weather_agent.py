@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStreamableHTTP
+from pydantic_ai.messages import AssistantMessage, UserMessage
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.result import StreamedRunResult
 from rich.console import Console
@@ -222,9 +223,13 @@ async def generate_stream(
     # Get message history (all messages except the last user message)
     message_history = None
     if len(request.messages) > 1:
-        # For now, we'll use the agent's built-in message history
-        # In a production system, you'd want to convert the messages properly
-        pass
+        message_history = [
+            UserMessage(role=msg.role, content=msg.content)
+            if msg.role == "user"
+            else AssistantMessage(role=msg.role, content=msg.content)
+            for msg in request.messages[:-1]
+            if msg.role in ["user", "assistant"]
+        ]
 
     # Stream the response
     first_chunk = True
