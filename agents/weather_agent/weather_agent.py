@@ -44,7 +44,7 @@ for var in required_env_vars:
 # -------------------------------------------------------------------------------------------------
 
 MODEL_NAME = os.environ["MODEL_NAME"]
-SYSTEM_PROMPT_PATH = "system_prompt.md"
+SYSTEM_PROMPT_PATH = "SYSTEM_PROMPT.md"
 TOOLS_MCP_WEATHER_SERVER_URL = os.environ["TOOLS_MCP_WEATHER_SERVER_URL"]
 
 

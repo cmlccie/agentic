@@ -10,7 +10,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY weather_agent.py system_prompt.md README.md ./
+COPY weather_agent.py SYSTEM_PROMPT.md README.md ./
 RUN chmod +x weather_agent.py
 
 RUN adduser -D -s /bin/sh appuser
