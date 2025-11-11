@@ -213,15 +213,10 @@ async def generate_stream(
 
     # Stream the response
     first_chunk = True
-    previous_content = ""
     async with agent.run_stream(
         user_message, message_history=message_history
     ) as result:
-        async for message_chunk in result.stream_output():
-            # Calculate the delta (new content only)
-            new_content = message_chunk[len(previous_content) :]
-            previous_content = message_chunk
-
+        async for message_chunk in result.stream_text(delta=True):
             if first_chunk:
                 # First chunk with role
                 chunk = ChatCompletionStreamResponse(
@@ -231,7 +226,7 @@ async def generate_stream(
                     choices=[
                         ChatCompletionStreamChoice(
                             index=0,
-                            delta={"role": "assistant", "content": new_content},
+                            delta={"role": "assistant", "content": message_chunk},
                             finish_reason=None,
                         )
                     ],
@@ -246,7 +241,7 @@ async def generate_stream(
                     choices=[
                         ChatCompletionStreamChoice(
                             index=0,
-                            delta={"content": new_content},
+                            delta={"content": message_chunk},
                             finish_reason=None,
                         )
                     ],
