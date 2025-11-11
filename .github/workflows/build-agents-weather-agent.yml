@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - "agents/weather_agent/**"
-      - ".github/workflows/agents-weather-agent.yml"
+      - ".github/workflows/build-agents-weather-agent.yml"
   pull_request:
     branches:
       - main
