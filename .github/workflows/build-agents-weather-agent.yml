@@ -1,0 +1,30 @@
+name: Build Weather Agent
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "agents/weather_agent/**"
+      - ".github/workflows/agents-weather-agent.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "agents/weather_agent/**"
+      - ".github/workflows/build-agents-weather-agent.yml"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-python-container-image.yml
+    with:
+      image-name: agents-weather-agent
+      context-path: ./agents/weather_agent
