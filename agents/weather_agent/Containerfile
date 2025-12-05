@@ -5,19 +5,12 @@ LABEL org.opencontainers.image.description="A Pydantic AI agent that provides we
 LABEL org.opencontainers.image.documentation="README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
 COPY weather_agent.py SYSTEM_PROMPT.md README.md ./
 RUN chmod +x weather_agent.py
-
-RUN adduser -D -s /bin/sh appuser
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# Expose port 8000 for HTTP transport (when using streamable-http mode)
+# Expose port 8000 for HTTP agent endpoints
 EXPOSE 8000
 
 ENTRYPOINT ["/app/weather_agent.py"]

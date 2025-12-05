@@ -5,16 +5,24 @@ on:
     branches:
       - main
     paths:
-      - "tools/mcp/weather_server/**"
+      - ".github/workflows/reusable-build-python-container-image.yml"
       - ".github/workflows/build-tools-mcp-weather-server.yml"
+      - "tools/mcp/weather_server/**"
   pull_request:
     branches:
       - main
     paths:
-      - "tools/mcp/weather_server/**"
+      - ".github/workflows/reusable-build-python-container-image.yml"
       - ".github/workflows/build-tools-mcp-weather-server.yml"
+      - "tools/mcp/weather_server/**"
   release:
     types: [published]
+  workflow_run:
+    workflows: ["Build Python Base Image"]
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -24,7 +32,7 @@ permissions:
 
 jobs:
   build:
-    uses: ./.github/workflows/build-python-container-image.yml
+    uses: ./.github/workflows/reusable-build-python-container-image.yml
     with:
       image-name: tools-mcp-weather-server
       context-path: ./tools/mcp/weather_server

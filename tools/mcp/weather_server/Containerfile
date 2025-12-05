@@ -5,15 +5,8 @@ LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) serve
 LABEL org.opencontainers.image.documentation="README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY weather_server.py .
+COPY weather_server.py README.md ./
 RUN chmod +x weather_server.py
-
-RUN adduser -D -s /bin/sh appuser
 RUN chown -R appuser:appuser /app
 USER appuser
 

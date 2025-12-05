@@ -12,34 +12,22 @@ This project is automatically built and published as a multi-architecture contai
 - `ghcr.io/cmlccie/agentic/tools-mcp-weather-server:main` - Main branch builds
 - `ghcr.io/cmlccie/agentic/tools-mcp-weather-server:v*` - Tagged releases
 
-### Usage
-
-#### Running with podman
+### Use
 
 ```bash
 # Run in stdio mode (default)
-podman run --rm ghcr.io/cmlccie/agentic/tools-mcp-weather-server:latest
+docker run --rm ghcr.io/cmlccie/agentic/tools-mcp-weather-server:latest
 
 # Run in HTTP mode on port 8000
-podman run --rm -p 8000:8000 ghcr.io/cmlccie/agentic/tools-mcp-weather-server:latest streamable-http
+docker run --rm -p 8000:8000 ghcr.io/cmlccie/agentic/tools-mcp-weather-server:latest streamable-http
 ```
 
-## Building Locally
+## Build Locally
 
 ```bash
 # Build for your current platform
-podman build -t tools-mcp-weather-server .
+docker build -t tools-mcp-weather-server .
 
 # Build for multiple platforms
-podman buildx build --platform linux/amd64,linux/arm64 -t tools-mcp-weather-server .
+docker buildx build --platform linux/amd64,linux/arm64 -t agentic/tools-mcp-weather-server:local .
 ```
-
-## Development
-
-This MCP server is built with:
-
-- Python 3.13
-- Alpine Linux base image
-- Multi-architecture support (amd64, arm64)
-
-See `requirements.txt` for Python dependencies and `weather_server.py` for the server implementation.
