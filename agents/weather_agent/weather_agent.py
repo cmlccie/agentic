@@ -58,25 +58,22 @@ TOOLS_MCP_WEATHER_SERVER_URL = os.environ["TOOLS_MCP_WEATHER_SERVER_URL"]
 
 model = OpenAIChatModel(model_name=MODEL_NAME)
 system_prompt = (here / SYSTEM_PROMPT_PATH).read_text()
+agent_tools = [MCPServerStreamableHTTP(url=TOOLS_MCP_WEATHER_SERVER_URL)]
 
-# Note: We don't create a global agent anymore because MCP tools
-# don't work well with concurrent requests. Instead, we create
-# an agent per request in the endpoint handlers.
+agent = Agent(
+    model=model,
+    output_type=str,
+    system_prompt=system_prompt,
+    toolsets=agent_tools,
+)
 
 
-def create_agent() -> Agent:
-    """Create a new agent instance with MCP tools.
-
-    This is needed because MCP tools use context managers that don't
-    work well with concurrent requests when shared across a global agent.
-    """
-    agent_tools = [MCPServerStreamableHTTP(url=TOOLS_MCP_WEATHER_SERVER_URL)]
-    return Agent(
-        model=model,
-        output_type=str,
-        system_prompt=system_prompt,
-        toolsets=agent_tools,
-    )
+@agent.system_prompt
+def add_date_info() -> str:
+    """Dynamic system prompt - adds current date information to the system prompt."""
+    # Example: Thursday, December 25, 2025 (2025-12-25)
+    current_date = time.strftime("%A, %B %d, %Y (%Y-%m-%d)")
+    return f"Today is {current_date}."
 
 
 # -------------------------------------------------------------------------------------------------
@@ -86,7 +83,6 @@ def create_agent() -> Agent:
 
 async def dev_console():
     """Function to chat with the weather agent."""
-    agent = create_agent()
     result: Optional[StreamedRunResult] = None
     while True:
         try:
@@ -233,9 +229,6 @@ async def generate_stream(
     created: int,
 ) -> AsyncGenerator[str, None]:
     """Generate streaming responses in OpenAI format."""
-    # Create a new agent instance for this request
-    agent = create_agent()
-
     # Convert request messages to Pydantic AI format
     user_message = request.messages[-1].content if request.messages else ""
 
@@ -331,7 +324,6 @@ async def chat_completions(request: ChatCompletionRequest):
 
     else:
         # Non-streaming response
-        agent = create_agent()
         user_message = request.messages[-1].content
         message_history = (
             [msg.to_model_message() for msg in request.messages[:-1]]
