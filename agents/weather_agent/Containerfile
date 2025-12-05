@@ -1,4 +1,4 @@
-FROM python:3.13-alpine
+FROM ghcr.io/cmlccie/agentic/python:latest
 
 LABEL org.opencontainers.image.title="Weather Agent"
 LABEL org.opencontainers.image.description="A Pydantic AI agent that provides weather information."

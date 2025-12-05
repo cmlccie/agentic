@@ -1,4 +1,4 @@
-FROM python:3.13-alpine
+FROM ghcr.io/cmlccie/agentic/python:latest
 
 LABEL org.opencontainers.image.title="MCP Weather Server"
 LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) server that provides weather information."
