@@ -1,0 +1,39 @@
+FROM python:3.13-alpine
+
+LABEL org.opencontainers.image.title="Agentic Python Base Image"
+LABEL org.opencontainers.image.description="A base image for Agentic Python applications."
+LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+# --------------------------------------------------------------------------------------
+# Install Base Image Dependencies
+# --------------------------------------------------------------------------------------
+
+COPY requirements.txt /opt/base-image/requirements.txt
+RUN pip install --no-cache-dir -r /opt/base-image/requirements.txt
+
+
+# --------------------------------------------------------------------------------------
+# Install Project Core Libraries
+# --------------------------------------------------------------------------------------
+
+# Copy and install source distributions
+# The dist directory is populated either:
+# - Locally via: uv build --sdist --out-dir images/python/dist
+# - In CI/CD via: download-artifact action placing files in images/python/dist
+COPY --chown=root:root ./dist/*.tar.gz /opt/base-image/dist/
+RUN pip install --no-cache-dir /opt/base-image/dist/*.tar.gz
+
+
+# --------------------------------------------------------------------------------------
+# Create Non-Root User & Setup App Directory
+# --------------------------------------------------------------------------------------
+
+RUN adduser -D -u 10000 -s /bin/sh appuser && \
+    mkdir /app && \
+    chown -R appuser:appuser /app
+
+WORKDIR /app
+
+# Don't switch to non-root user here; leave it to the application Containerfiles
+# USER appuser

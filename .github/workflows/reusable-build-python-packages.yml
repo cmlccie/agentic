@@ -1,0 +1,43 @@
+name: Reusable Build for Python Packages
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: "Name for the artifacts upload (e.g., 'python-packages')"
+        required: false
+        type: string
+        default: "python-packages"
+      source-path:
+        description: "Path to the source code directory (relative to repository root)"
+        required: false
+        type: string
+        default: "./src"
+
+jobs:
+  build-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build source distribution
+        run: |
+          uv sync
+          uv build --sdist
+
+      - name: Upload source distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 1

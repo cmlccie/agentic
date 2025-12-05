@@ -1,4 +1,15 @@
 # --------------------------------------------------------------------------------------
+# Container Engine Detection
+# --------------------------------------------------------------------------------------
+
+# Detect container engine (podman or docker)
+CONTAINER_ENGINE := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null)
+
+ifeq ($(CONTAINER_ENGINE),)
+$(error No container engine found. Please install docker or podman)
+endif
+
+# --------------------------------------------------------------------------------------
 # Repository Targets
 # --------------------------------------------------------------------------------------
 
@@ -17,10 +28,6 @@ sync: ## Sync all dependencies
 
 upgrade: ## Upgrade dependencies to latest versions
 	uv sync --upgrade --all-groups
-
-	# Exporting updated Dependencies
-	uv export --only-group agents_weather_agent --format requirements.txt -o agents/weather_agent/requirements.txt
-	uv export --only-group tools_mcp_weather_server --format requirements.txt -o tools/mcp/weather_server/requirements.txt
 
 clean: ## Remove temporary and build artifacts
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
@@ -48,8 +55,20 @@ check: lint ## Run all checks (lint + format check)
 # Build Targets
 # -------------------------------------------------------------------------------------------------
 
+.PHONY: python-base-image agents-weather-agent tools-mcp-weather-server
+
+images/python/requirements.txt: pyproject.toml uv.lock ## Export requirements.txt for the Python Base Image
+	uv export --no-dev --no-emit-project --format requirements.txt -o images/python/requirements.txt
+
+images/python/dist: src/ pyproject.toml ## Build the project distribution packages for the Python Base Image
+	rm -rf images/python/dist
+	uv build --sdist --out-dir images/python/dist
+
+python-base-image: images/python/dist images/python/requirements.txt ## Build the Python Base Image
+	$(CONTAINER_ENGINE) build -f images/python/Containerfile -t agentic/python:local images/python/
+
 agents-weather-agent: ## Build the Weather Agent
-	podman build -f agents/weather_agent/Containerfile -t agents-weather-agent:latest agents/weather_agent/
+	$(CONTAINER_ENGINE) build -f agents/weather_agent/Containerfile -t agentic/agents-weather-agent:local agents/weather_agent/
 
 tools-mcp-weather-server: ## Build the MCP Weather Server
-	podman build -f tools/mcp/weather_server/Containerfile -t tools-mcp-weather-server:latest tools/mcp/weather_server/
+	$(CONTAINER_ENGINE) build -f tools/mcp/weather_server/Containerfile -t agentic/tools-mcp-weather-server:local tools/mcp/weather_server/

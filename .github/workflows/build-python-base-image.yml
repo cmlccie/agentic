@@ -1,0 +1,43 @@
+name: Build Python Base Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-python-base-image.yml"
+      - "images/python/**"
+      - "pyproject.toml"
+      - "src/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-python-base-image.yml"
+      - "images/python/**"
+      - "pyproject.toml"
+      - "src/**"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build-packages:
+    uses: ./.github/workflows/reusable-build-python-packages.yml
+    with:
+      artifact-name: agentic-python-packages
+
+  build:
+    needs: build-packages
+    uses: ./.github/workflows/reusable-build-python-container-image.yml
+    with:
+      image-name: python
+      context-path: ./images/python
+      artifact-name: agentic-python-packages
