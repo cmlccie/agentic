@@ -8,7 +8,6 @@ from functools import wraps
 from typing import Any, Dict, Hashable, List, Literal, Optional
 from zoneinfo import ZoneInfo
 
-import pandas as pd
 import requests
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
@@ -206,18 +205,15 @@ def get_weather_forecast(
     daily_data = data.get("daily", {})
     daily_units = data.get("daily_units", {})
 
-    # Create DataFrame from the daily data
-    daily_forecast_dataframe = pd.DataFrame()
+    # Transform daily data to match format: {date: {variable: value, ...}, ...}
+    daily_dict = {}
+    dates = daily_data.get("time", [])
 
-    # Add date column
-    if "time" in daily_data:
-        daily_forecast_dataframe["date"] = daily_data["time"]
-        daily_forecast_dataframe.set_index("date", inplace=True)
-
-    # Add weather variables to DataFrame
-    for variable in weather_variables:
-        if variable in daily_data:
-            daily_forecast_dataframe[variable] = daily_data[variable]
+    for i, date in enumerate(dates):
+        daily_dict[date] = {}
+        for variable in weather_variables:
+            if variable in daily_data and i < len(daily_data[variable]):
+                daily_dict[date][variable] = daily_data[variable][i]
 
     weather_forecast = WeatherForecast(
         latitude=data.get("latitude", latitude),
@@ -226,7 +222,7 @@ def get_weather_forecast(
         timezone=data.get("timezone"),
         timezone_abbreviation=data.get("timezone_abbreviation"),
         daily_units=daily_units,
-        daily=daily_forecast_dataframe.to_dict(orient="index"),
+        daily=daily_dict,
     )
     return weather_forecast
 
