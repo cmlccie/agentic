@@ -12,6 +12,8 @@ from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStreamableHTTP
 from pydantic_ai.models.openai import OpenAIChatModel
 
+from agentic.openai import OpenAICompatibleAPI
+
 ## Global Variables
 
 # Path to the current directory
@@ -112,6 +114,23 @@ def a2a(agent_url: str, host: str | None = None, port: int | None = None):
     )
 
     uvicorn.run(a2a_app, host=host, port=port)
+
+
+@app.command(short_help="OpenAI Compatible API Interface")
+def openai_api(host: str | None = None, port: int | None = None):
+    """OpenAI Compatible API interface."""
+
+    host = host or os.environ.get("HOST", "0.0.0.0")
+    port = port or int(os.environ.get("PORT", 8000))
+
+    openai_api = OpenAICompatibleAPI(
+        agent=agent,
+        title="Weather Agent OpenAI Compatible API",
+        description="OpenAI-compatible API for the Weather Agent.",
+        model_name=MODEL_NAME,
+    )
+
+    openai_api.run(host=host, port=port)
 
 
 if __name__ == "__main__":
