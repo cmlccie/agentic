@@ -5,13 +5,13 @@ LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) serve
 LABEL org.opencontainers.image.documentation="README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
-COPY weather_server.py README.md ./
-RUN chmod +x weather_server.py
+COPY provisioning_server.py README.md ./
+RUN chmod +x provisioning_server.py
 RUN chown -R appuser:appuser /app
 USER appuser
 
 # Expose port 8000 for HTTP transport (when using streamable-http mode)
 EXPOSE 8000
 
-ENTRYPOINT ["/app/weather_server.py"]
+ENTRYPOINT ["/app/provisioning_server.py"]
 CMD ["stdio"]
