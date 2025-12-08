@@ -1,32 +1,16 @@
 #!/usr/bin/env python3
 """Weather Agent using Pydantic AI and MCP tools."""
 
-import asyncio
 import os
-import sys
 import time
 from pathlib import Path
-from typing import AsyncGenerator, Literal, Optional
 
+import typer
 import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from fasta2a import Skill
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStreamableHTTP
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    SystemPromptPart,
-    TextPart,
-    UserPromptPart,
-)
 from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.result import StreamedRunResult
-from rich.console import Console
-from rich.live import Live
-from rich.markdown import Markdown
 
 ## Global Variables
 
@@ -76,298 +60,59 @@ def add_date_info() -> str:
     return f"Today is {current_date}."
 
 
-# -------------------------------------------------------------------------------------------------
-# Developer Console
-# -------------------------------------------------------------------------------------------------
-
-
-async def dev_console():
-    """Function to chat with the weather agent."""
-    result: Optional[StreamedRunResult] = None
-    while True:
-        try:
-            prompt = input("❯ ")
-            if prompt.lower() in {"exit", "quit"}:
-                print("Exiting the weather agent. Goodbye!")
-                break
-
-            console = Console()
-
-            with Live("", console=console, vertical_overflow="visible") as live:
-                async with agent.run_stream(
-                    prompt, message_history=result.all_messages() if result else None
-                ) as result:
-                    async for message in result.stream_output():
-                        live.update(Markdown(message))
-
-            console.log(result.usage())
-
-        except KeyboardInterrupt:
-            print("\nExiting the weather agent. Goodbye!")
-            break
-
-
-# -------------------------------------------------------------------------------------------------
-# Agent API
-# -------------------------------------------------------------------------------------------------
-
-
-agent_api = FastAPI(
-    title="Weather Agent API",
-    description="Weather Agent REST APIs including OpenAI-compatible endpoints.",
-    version="0.1.0",
-)
-
 # --------------------------------------------------------------------------------------
-# Service Endpoints
+# Agent Skills
 # --------------------------------------------------------------------------------------
 
-
-@agent_api.get("/", tags=["Service Endpoints"])
-async def root():
-    """Root endpoint."""
-    return {"message": "Weather Agent API is running"}
-
-
-@agent_api.get("/health", tags=["Service Endpoints"])
-async def health():
-    """Health check endpoint."""
-    return {"status": "healthy"}
-
-
-# --------------------------------------------------------------------------------------
-# OpenAI Compatible Endpoints
-# --------------------------------------------------------------------------------------
-
-# -----------------------------------------------------------------------------
-# Data Models
-# -----------------------------------------------------------------------------
-
-
-class Message(BaseModel):
-    """Chat message."""
-
-    role: Literal["system", "user", "assistant"]
-    content: str
-
-    def to_model_message(self) -> ModelMessage:
-        """Convert to Pydantic AI ModelMessage."""
-        match self.role:
-            case "system":
-                return ModelRequest(parts=[SystemPromptPart(content=self.content)])
-            case "user":
-                return ModelRequest(parts=[UserPromptPart(content=self.content)])
-            case "assistant":
-                return ModelResponse(parts=[TextPart(content=self.content)])
-            case _:
-                raise ValueError(f"Unknown role: {self.role}")
-
-
-class ChatCompletionRequest(BaseModel):
-    """OpenAI-compatible chat completion request."""
-
-    model: str = Field(default=MODEL_NAME, description="Model name")
-    messages: list[Message]
-    stream: bool = Field(default=False, description="Enable streaming responses")
-    temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
-    max_tokens: Optional[int] = Field(default=None, ge=1)
-
-
-class ChatCompletionChoice(BaseModel):
-    """A single chat completion choice."""
-
-    index: int
-    message: Message
-    finish_reason: str
-
-
-class Usage(BaseModel):
-    """Token usage information."""
-
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
-class ChatCompletionResponse(BaseModel):
-    """OpenAI-compatible chat completion response."""
-
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    choices: list[ChatCompletionChoice]
-    usage: Usage
-
-
-class ChatCompletionStreamChoice(BaseModel):
-    """A single streaming chat completion choice."""
-
-    index: int
-    delta: dict[str, str]
-    finish_reason: Optional[str] = None
-
-
-class ChatCompletionStreamResponse(BaseModel):
-    """OpenAI-compatible streaming chat completion response."""
-
-    id: str
-    object: str = "chat.completion.chunk"
-    created: int
-    model: str
-    choices: list[ChatCompletionStreamChoice]
-
-
-# -----------------------------------------------------------------------------
-# Streaming Response Generator
-# -----------------------------------------------------------------------------
-
-
-async def generate_stream(
-    request: ChatCompletionRequest,
-    completion_id: str,
-    created: int,
-) -> AsyncGenerator[str, None]:
-    """Generate streaming responses in OpenAI format."""
-    # Convert request messages to Pydantic AI format
-    user_message = request.messages[-1].content if request.messages else ""
-
-    # Get message history (all messages except the last user message)
-    message_history = (
-        [msg.to_model_message() for msg in request.messages[:-1]]
-        if len(request.messages) > 1
-        else None
-    )
-
-    # Stream the response
-    first_chunk = True
-    async with agent.run_stream(
-        user_message, message_history=message_history
-    ) as result:
-        async for message_chunk in result.stream_text(delta=True):
-            if first_chunk:
-                # First chunk with role
-                chunk = ChatCompletionStreamResponse(
-                    id=completion_id,
-                    created=created,
-                    model=request.model,
-                    choices=[
-                        ChatCompletionStreamChoice(
-                            index=0,
-                            delta={"role": "assistant", "content": message_chunk},
-                            finish_reason=None,
-                        )
-                    ],
-                )
-                first_chunk = False
-            else:
-                # Subsequent chunks with content only
-                chunk = ChatCompletionStreamResponse(
-                    id=completion_id,
-                    created=created,
-                    model=request.model,
-                    choices=[
-                        ChatCompletionStreamChoice(
-                            index=0,
-                            delta={"content": message_chunk},
-                            finish_reason=None,
-                        )
-                    ],
-                )
-
-            yield f"data: {chunk.model_dump_json()}\n\n"
-
-    # Send final chunk with finish_reason
-    final_chunk = ChatCompletionStreamResponse(
-        id=completion_id,
-        created=created,
-        model=request.model,
-        choices=[
-            ChatCompletionStreamChoice(
-                index=0,
-                delta={},
-                finish_reason="stop",
-            )
+agent_skills = [
+    Skill(
+        id="get-weather-forecast",
+        name="Get Weather Forecast",
+        description="Get the weather forecast for the provided location.",
+        tags=["weather", "forecast", "location"],
+        examples=[
+            "What's the weather in Knoxville, TN?",
+            "Forecast for San Francisco, CA.",
+            "Tell me the weather in Tokyo, Japan for the next week.",
+            "Get the 3-day weather forecast for London, UK.",
+            "What's the weather like in Sydney, Australia this weekend?",
         ],
+        input_modes=["text/plain"],
+        output_modes=["text/plain"],
+    ),
+]
+
+
+# -------------------------------------------------------------------------------------------------
+# Agent Interfaces
+# -------------------------------------------------------------------------------------------------
+
+app = typer.Typer(no_args_is_help=True, help="Weather Agent")
+
+
+@app.command(short_help="Command Line Interface (CLI)")
+def cli():
+    """Command Line Interface (CLI)."""
+    agent.to_cli_sync(prog_name="weather-agent")
+
+
+@app.command(short_help="Agent2Agent (A2A) Interface")
+def a2a(agent_url: str, host: str | None = None, port: int | None = None):
+    """Agent2Agent interface."""
+
+    host = host or os.environ.get("HOST", "0.0.0.0")
+    port = port or int(os.environ.get("PORT", 8000))
+
+    a2a_app = agent.to_a2a(
+        name="Weather Agent",
+        description="Weather forecast agent.",
+        url=agent_url,
+        skills=agent_skills,
+        debug=True,
     )
-    yield f"data: {final_chunk.model_dump_json()}\n\n"
-    yield "data: [DONE]\n\n"
 
-
-# -----------------------------------------------------------------------------
-# OpenAI-compatible Endpoints
-# -----------------------------------------------------------------------------
-
-
-@agent_api.post("/v1/chat/completions")
-async def chat_completions(request: ChatCompletionRequest):
-    """OpenAI-compatible chat completions endpoint.
-
-    Supports both streaming and non-streaming responses.
-    """
-    assert request.messages, "Messages are required"
-
-    completion_id = f"chatcmpl-{int(time.time() * 1000)}"
-    created = int(time.time())
-
-    if request.stream:
-        # Return streaming response
-        return StreamingResponse(
-            generate_stream(request, completion_id, created),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            },
-        )
-
-    else:
-        # Non-streaming response
-        user_message = request.messages[-1].content
-        message_history = (
-            [msg.to_model_message() for msg in request.messages[:-1]]
-            if len(request.messages) > 1
-            else None
-        )
-        result = await agent.run(user_message, message_history=message_history)
-        usage_info = result.usage()
-
-        response = ChatCompletionResponse(
-            id=completion_id,
-            created=created,
-            model=request.model,
-            choices=[
-                ChatCompletionChoice(
-                    index=0,
-                    message=Message(role="assistant", content=result.output),
-                    finish_reason="stop",
-                )
-            ],
-            usage=Usage(
-                prompt_tokens=usage_info.input_tokens or 0,
-                completion_tokens=usage_info.output_tokens or 0,
-                total_tokens=usage_info.total_tokens or 0,
-            ),
-        )
-
-        return response
-
-
-# -------------------------------------------------------------------------------------------------
-# Main Script Endpoints
-# -------------------------------------------------------------------------------------------------
-
-
-def run_api_server(host: str = "0.0.0.0", port: int = 8000):
-    """Run the FastAPI server."""
-    uvicorn.run(agent_api, host=host, port=port)
+    uvicorn.run(a2a_app, host=host, port=port)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--developer-console":
-        asyncio.run(dev_console())
-    else:
-        host = os.environ.get("API_HOST", "0.0.0.0")
-        port = int(os.environ.get("API_PORT", "8000"))
-        run_api_server(host=host, port=port)
+    app()
