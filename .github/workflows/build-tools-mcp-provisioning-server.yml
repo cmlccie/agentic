@@ -1,0 +1,38 @@
+name: Build MCP Provisioning Server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-tools-mcp-provisioning-server.yml"
+      - "tools/mcp/provisioning_server/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-tools-mcp-provisioning-server.yml"
+      - "tools/mcp/provisioning_server/**"
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Build Python Base Image"]
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-python-container-image.yml
+    with:
+      image-name: tools-mcp-provisioning-server
+      context-path: ./tools/mcp/provisioning_server

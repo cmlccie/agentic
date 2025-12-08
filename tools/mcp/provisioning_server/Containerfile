@@ -1,0 +1,17 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="MCP Provisioning Server"
+LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) server that provisions IT resources."
+LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+COPY weather_server.py README.md ./
+RUN chmod +x weather_server.py
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port 8000 for HTTP transport (when using streamable-http mode)
+EXPOSE 8000
+
+ENTRYPOINT ["/app/weather_server.py"]
+CMD ["stdio"]
