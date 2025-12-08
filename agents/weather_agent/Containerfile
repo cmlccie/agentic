@@ -5,7 +5,7 @@ LABEL org.opencontainers.image.description="A Pydantic AI agent that provides we
 LABEL org.opencontainers.image.documentation="README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
-COPY weather_agent.py SYSTEM_PROMPT.md README.md ./
+COPY weather_agent.py system_prompt.md README.md ./
 RUN chmod +x weather_agent.py
 RUN chown -R appuser:appuser /app
 USER appuser
