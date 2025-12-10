@@ -1,0 +1,38 @@
+name: Build Provisioning Agent
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-agents-provisioning-agent.yml"
+      - "agents/provisioning_agent/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-agents-provisioning-agent.yml"
+      - "agents/provisioning_agent/**"
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Build Python Base Image"]
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-python-container-image.yml
+    with:
+      image-name: agents-provisioning-agent
+      context-path: ./agents/provisioning_agent
