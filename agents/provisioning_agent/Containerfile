@@ -1,0 +1,17 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="Provisioning Agent"
+LABEL org.opencontainers.image.description="A Pydantic AI agent that provisions IT infrastructure."
+LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+COPY provisioning_agent.py system_prompt.md README.md ./
+RUN chmod +x provisioning_agent.py
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port 8000 for HTTP agent endpoints
+EXPOSE 8000
+
+ENTRYPOINT ["/app/provisioning_agent.py"]
+CMD ["openai-api"]
