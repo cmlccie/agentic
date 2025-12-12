@@ -2,7 +2,7 @@
 """Weather Agent using Pydantic AI and MCP tools."""
 
 import os
-import time
+from datetime import date, timedelta
 from pathlib import Path
 
 import typer
@@ -11,6 +11,7 @@ from fasta2a import Skill
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStreamableHTTP
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.settings import ModelSettings
 
 from agentic.openai import OpenAICompatibleAPI
 
@@ -46,20 +47,40 @@ model = OpenAIChatModel(model_name=MODEL_NAME)
 system_prompt = (here / SYSTEM_PROMPT_PATH).read_text()
 agent_tools = [MCPServerStreamableHTTP(url=TOOLS_MCP_WEATHER_SERVER_URL)]
 
+model_settings = ModelSettings(
+    temperature=0.2,
+)
+
 agent = Agent(
     model=model,
-    output_type=str,
     system_prompt=system_prompt,
     toolsets=agent_tools,
+    model_settings=model_settings,
+    output_type=str,
 )
 
 
 @agent.system_prompt
 def add_date_info() -> str:
-    """Dynamic system prompt - adds current date information to the system prompt."""
-    # Example: Thursday, December 25, 2025 (2025-12-25)
-    current_date = time.strftime("%A, %B %d, %Y (%Y-%m-%d)")
-    return f"Today is {current_date}."
+    """Dynamic system prompt - adds current date information to the system prompt.
+
+    Weather forecasts are available for 16 days, including today. Add dates and days
+    of the week to the system prompt to help the agent provide accurate forecasts.
+    """
+    # Date Info Format: Thursday, December 25, 2025 (2025-12-25)
+
+    today = date.today()
+    date_info = [
+        (today + timedelta(days=i)).strftime("%A, %B %d, %Y (%Y-%m-%d)")
+        for i in range(16)
+    ]
+
+    return f"""## Date Information
+
+    - Today is {today.strftime("%A, %B %d, %Y (%Y-%m-%d)")}.
+    - Weather forecasts are available for the following dates:
+      - {"\n  - ".join(date_info)}
+    """
 
 
 # --------------------------------------------------------------------------------------
