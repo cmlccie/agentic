@@ -54,18 +54,27 @@ def fancy(level: int = logging.INFO):
 # --------------------------------------------------------------------------------------
 
 
-def log_call(logger: logging.Logger) -> Callable:
-    """Decorator to log function calls and their results."""
+def log_call(logger: logging.Logger, level: int = logging.DEBUG) -> Callable:
+    """Decorator to log function calls and their results.
+
+    Args:
+        logger: The logger instance to use for logging.
+        level: The logging level to use (default: logging.DEBUG).
+    """
 
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            logger.info(
-                f"Call: {func.__name__}({', '.join(map(repr, args))}, {', '.join(f'{k}={v!r}' for k, v in kwargs.items())})"
+            logger.log(
+                level,
+                f"Call: {func.__name__}({', '.join(map(repr, args))}, {', '.join(f'{k}={v!r}' for k, v in kwargs.items())})",
+                stacklevel=2,
             )
             result = func(*args, **kwargs)
-            logger.info(
-                f"Result: {func.__name__}({', '.join(map(repr, args))}, {', '.join(f'{k}={v!r}' for k, v in kwargs.items())}) -> {result}"
+            logger.log(
+                level,
+                f"Result: {func.__name__}({', '.join(map(repr, args))}, {', '.join(f'{k}={v!r}' for k, v in kwargs.items())}) -> {result}",
+                stacklevel=2,
             )
             return result
 
