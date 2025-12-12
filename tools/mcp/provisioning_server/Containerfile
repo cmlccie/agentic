@@ -14,4 +14,4 @@ USER appuser
 EXPOSE 8000
 
 ENTRYPOINT ["/app/provisioning_server.py"]
-CMD ["--transport", "stdio"]
+CMD ["stdio"]
