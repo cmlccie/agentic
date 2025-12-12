@@ -2,21 +2,28 @@
 """MCP Weather Server."""
 
 import logging
+import os
 from typing import Literal
 
 import typer
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
+import agentic.logging
+
+agentic.logging.fancy()
 logger = logging.getLogger("provisioning_server")
-logging.basicConfig(level=logging.INFO)
+
+
+HOST = os.environ.get("HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", "8000"))
 
 
 # -------------------------------------------------------------------------------------------------
 # MCP Provisioning Server
 # -------------------------------------------------------------------------------------------------
 
-mcp = FastMCP("MCP Provisioning", host="0.0.0.0", port=8000)
+mcp = FastMCP("MCP Provisioning", host=HOST, port=PORT)
 
 
 # --------------------------------------------------------------------------------------
@@ -131,8 +138,10 @@ def provision_vlan(vlan_id: int, name: str, ipv4_cidr: str) -> VLAN:
 # -------------------------------------------------------------------------------------------------
 
 
-def main(transport: Literal["stdio", "streamable-http"] = "stdio") -> None:
-    """Main function to run the MCP server."""
+def main(
+    transport: Literal["stdio", "streamable-http"] = typer.Argument(default="stdio"),
+):
+    """Model Context Protocol (MCP) Provisioning Server."""
     logger.info(f"Starting {transport} MCP Provisioning Server")
     mcp.run(transport=transport)
 
