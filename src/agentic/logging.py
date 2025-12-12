@@ -1,15 +1,22 @@
+"""Logging configurations and utilities."""
+
 import logging
-from typing import Optional
+from functools import wraps
+from typing import Callable
 
-import click
+from rich.logging import RichHandler
+
+# -------------------------------------------------------------------------------------------------
+# Logging Configurations
+# -------------------------------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------------------
-# Silent Logging Config
+# Silent
 # --------------------------------------------------------------------------------------
 
 
-def silent_config(level: int = logging.WARNING) -> None:
-    """Configure logging to disable console output."""
+def silent(level: int = logging.WARNING):
+    """Remove all existing logging handlers and set the logging level."""
 
     # Remove all existing handlers
     root_logger = logging.getLogger()
@@ -25,91 +32,43 @@ def silent_config(level: int = logging.WARNING) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Fancy Logging Config
+# Fancy
 # --------------------------------------------------------------------------------------
 
 
-class ColoredFormatter(logging.Formatter):
-    """Custom formatter that uses click for colored output."""
-
-    # Color mapping for different log levels
-    COLORS = {
-        logging.DEBUG: "cyan",
-        logging.INFO: "blue",
-        logging.WARNING: "yellow",
-        logging.ERROR: "red",
-        logging.CRITICAL: "magenta",
-    }
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Format the log record with colors based on log level."""
-        # Get the original formatted message
-        message = super().format(record)
-
-        # Get the color for this log level
-        color = self.COLORS.get(record.levelno, "white")
-
-        # Return the colored message
-        return click.style(message, fg=color)
+def fancy(level: int = logging.INFO):
+    logging.basicConfig(
+        level=level,
+        format="%(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S%z",
+        handlers=[RichHandler()],
+    )
 
 
-class ClickHandler(logging.Handler):
-    """Custom logging handler that uses click.echo for output."""
-
-    def emit(self, record: logging.LogRecord) -> None:
-        """Emit a log record using click.echo."""
-        try:
-            message = self.format(record)
-            click.echo(message, err=True)
-        except Exception:
-            self.handleError(record)
-
-
-def fancy_config(
-    level: int = logging.INFO,
-    format_string: Optional[str] = None,
-    date_format: Optional[str] = None,
-) -> None:
-    """Configure logging with formatting and colored output by logging level.
-
-    Args:
-        level: The logging level threshold (default: logging.INFO)
-        format_string: Custom format string (default: includes timestamp, level, name, and message)
-        date_format: Custom date format string (default: ISO 8601 format)
-    """
-
-    # Default format if none provided
-    if format_string is None:
-        format_string = "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s"
-
-    # Default date format if none provided
-    if date_format is None:
-        date_format = "%Y-%m-%dT%H:%M:%S"
-
-    # Remove all existing handlers
-    root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    # Set the logging level
-    root_logger.setLevel(level)
-
-    # Create the colored formatter
-    formatter = ColoredFormatter(format_string, date_format)
-
-    # Create the click handler
-    handler = ClickHandler()
-    handler.setFormatter(formatter)
-
-    # Add the handler to the root logger
-    root_logger.addHandler(handler)
-
+# -------------------------------------------------------------------------------------------------
+# Utility Functions
+# -------------------------------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------------------
-# Colorized Logging Config
+# Function Decorator to Log Function Calls
 # --------------------------------------------------------------------------------------
 
 
-def colorized_config(level: int = logging.INFO) -> None:
-    """Configure logging with colored output by logging level."""
-    fancy_config(level, format_string="%(message)s")
+def log_call(logger: logging.Logger) -> Callable:
+    """Decorator to log function calls and their results."""
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            logger.info(
+                f"Call: {func.__name__}({', '.join(map(repr, args))}, {', '.join(f'{k}={v!r}' for k, v in kwargs.items())})"
+            )
+            result = func(*args, **kwargs)
+            logger.info(
+                f"Result: {func.__name__}({', '.join(map(repr, args))}, {', '.join(f'{k}={v!r}' for k, v in kwargs.items())}) -> {result}"
+            )
+            return result
+
+        return wrapper
+
+    return decorator
