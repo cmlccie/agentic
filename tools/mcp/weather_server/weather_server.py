@@ -1,61 +1,37 @@
 #!/usr/bin/env python3
 """MCP Weather Server."""
 
-import argparse
 import logging
+import os
 from datetime import datetime
-from functools import wraps
 from typing import Any, Dict, Hashable, List, Literal, Optional
 from zoneinfo import ZoneInfo
 
 import requests
+import typer
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger("weather_server")
-logging.basicConfig(level=logging.INFO)
+import agentic.logging
 
+agentic.logging.fancy()
+logger = logging.getLogger("weather_server")
+
+
+HOST = os.environ.get("HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", "8000"))
 
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+
+location_cache: dict[int, "LocationInfo"] = {}
 
 # -------------------------------------------------------------------------------------------------
 # MCP Weather Server
 # -------------------------------------------------------------------------------------------------
 
-# Create an MCP server
-mcp = FastMCP("MCP Weather Server", host="0.0.0.0", port=8000)
 
-
-# --------------------------------------------------------------------------------------
-# Helper Functions
-# --------------------------------------------------------------------------------------
-
-
-def log_call(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        logger.info(
-            f"Call: {func.__name__}({', '.join(map(repr, args))}, {', '.join(f'{k}={v!r}' for k, v in kwargs.items())})"
-        )
-        result = func(*args, **kwargs)
-        logger.info(
-            f"Result: {func.__name__}({', '.join(map(repr, args))}, {', '.join(f'{k}={v!r}' for k, v in kwargs.items())}) -> {result}"
-        )
-        return result
-
-    return wrapper
-
-
-# --------------------------------------------------------------------------------------
-# Prompt
-# --------------------------------------------------------------------------------------
-
-
-@mcp.prompt()
-def get_weather_prompt(location: str, timeframe: str) -> str:
-    """Get the weather prompt."""
-    return f"What is the weather like in {location} for {timeframe}?"
+mcp = FastMCP("MCP Weather Server", host=HOST, port=PORT)
 
 
 # --------------------------------------------------------------------------------------
@@ -120,7 +96,7 @@ class WeatherForecast(BaseModel):
 
 
 @mcp.tool()
-@log_call
+@agentic.logging.log_call(logger)
 def get_weather_forecast(
     latitude: float,
     longitude: float,
@@ -269,7 +245,7 @@ class LocationInfo(BaseModel):
 
 
 @mcp.tool()
-@log_call
+@agentic.logging.log_call(logger)
 def get_locations(
     name: str, country_code: Optional[str] = None, count: int = 10
 ) -> List[LocationInfo]:
@@ -302,7 +278,41 @@ def get_locations(
         LocationInfo.model_validate(location) for location in results
     ]
 
+    # Update the location cache
+    for location in location_information:
+        location_cache[location.id] = location
+
     return location_information
+
+
+# --------------------------------------------------------------------------------------
+# Resource
+# --------------------------------------------------------------------------------------
+
+
+@mcp.resource("locations://cache")
+def locations_cache() -> List[LocationInfo]:
+    """Cached location information.
+
+    This resource provides access to a cache of known locations, including their
+    latitude and longitude coordinates, elevation, timezone, and administrative
+    districts.
+
+    Returns:
+        List[LocationInfo]: A list of cached locations.
+    """
+    return list(location_cache.values())
+
+
+# --------------------------------------------------------------------------------------
+# Prompt
+# --------------------------------------------------------------------------------------
+
+
+@mcp.prompt()
+def get_weather_prompt(location: str, timeframe: str) -> str:
+    """Get the weather prompt."""
+    return f"What is the weather forecast for {location} {timeframe}?"
 
 
 # -------------------------------------------------------------------------------------------------
@@ -310,29 +320,13 @@ def get_locations(
 # -------------------------------------------------------------------------------------------------
 
 
-def main(transport: Literal["stdio", "sse", "streamable-http"]) -> None:
-    """Main function to run the MCP server."""
+def main(
+    transport: Literal["stdio", "streamable-http"] = typer.Argument(default="stdio"),
+):
+    """Model Context Protocol (MCP) Weather Server."""
     logger.info(f"Starting {transport} MCP Weather Server")
     mcp.run(transport=transport)
 
 
-# --------------------------------------------------------------------------------------
-# CLI
-# --------------------------------------------------------------------------------------
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="MCP Weather Server")
-    subparsers = parser.add_subparsers(dest="mode", help="Server mode")
-    subparsers.add_parser("stdio", help="Run stdio stdio MCP server")
-    subparsers.add_parser("streamable-http", help="Run streamable-http MCP server")
-    args = parser.parse_args()
-
-    if args.mode is None:
-        parser.print_help()
-        exit(1)
-
-    try:
-        main(args.mode)
-    except KeyboardInterrupt:
-        logger.info("MCP server stopped by user.")
+    typer.run(main)
