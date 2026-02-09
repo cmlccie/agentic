@@ -9,6 +9,10 @@ dependencies = [
     "fastapi>=0.121.1",
     "fastmcp>=2.13.3",
     "httpx>=0.28.1",
+    "langchain-core>=0.3.0",
+    "langchain-mcp-adapters>=0.1.0",
+    "langchain-openai>=0.2.0",
+    "langgraph>=0.2.0",
     "mcp[cli]>=1.21.0",
     "openai>=2.9.0",
     "opentelemetry-api>=1.38.0",
@@ -17,6 +21,7 @@ dependencies = [
     "pydantic-ai-slim[a2a,cli,fastmcp,mcp,openai]>=1.14.0",
     "requests>=2.32.5",
     "rich>=14.2.0",
+    "tabulate>=0.9.0",
     "typer>=0.20.0",
 ]
 
