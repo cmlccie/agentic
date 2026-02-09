@@ -55,7 +55,7 @@ check: lint ## Run all checks (lint + format check)
 # Build Targets
 # -------------------------------------------------------------------------------------------------
 
-.PHONY: python-base-image agents-weather-agent tools-mcp-weather-server
+.PHONY: python-base-image agents-weather-agent agents-thousandeyes-agent tools-mcp-weather-server
 
 images/python/requirements.txt: pyproject.toml uv.lock ## Export requirements.txt for the Python Base Image
 	uv export --no-dev --no-emit-project --format requirements.txt -o images/python/requirements.txt
@@ -69,6 +69,9 @@ python-base-image: images/python/dist images/python/requirements.txt ## Build th
 
 agents-weather-agent: ## Build the Weather Agent
 	$(CONTAINER_ENGINE) build -f agents/weather_agent/Containerfile -t agentic/agents-weather-agent:local agents/weather_agent/
+
+agents-thousandeyes-agent: ## Build the ThousandEyes Agent
+	$(CONTAINER_ENGINE) build -f agents/thousandeyes_agent/Containerfile -t agentic/agents-thousandeyes-agent:local agents/thousandeyes_agent/
 
 tools-mcp-weather-server: ## Build the MCP Weather Server
 	$(CONTAINER_ENGINE) build -f tools/mcp/weather_server/Containerfile -t agentic/tools-mcp-weather-server:local tools/mcp/weather_server/
