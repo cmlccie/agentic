@@ -52,7 +52,9 @@ async def main():
                     content = str(part.content)[:200]
                     print(f"  Part {j} ({part_type}): {content}")
                 elif hasattr(part, "tool_name"):
-                    print(f"  Part {j} ({part_type}): tool={part.tool_name}, args={getattr(part, 'args', None)}")
+                    print(
+                        f"  Part {j} ({part_type}): tool={part.tool_name}, args={getattr(part, 'args', None)}"
+                    )
                 else:
                     print(f"  Part {j} ({part_type}): {part}")
 

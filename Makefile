@@ -55,7 +55,7 @@ check: lint ## Run all checks (lint + format check)
 # Build Targets
 # -------------------------------------------------------------------------------------------------
 
-.PHONY: python-base-image agents-weather-agent agents-thousandeyes-agent tools-mcp-weather-server
+.PHONY: python-base-image agents-weather-agent agents-thousandeyes-agent agents-meraki-agent tools-mcp-weather-server tools-mcp-meraki-server
 
 images/python/requirements.txt: pyproject.toml uv.lock ## Export requirements.txt for the Python Base Image
 	uv export --no-dev --no-emit-project --format requirements.txt -o images/python/requirements.txt
@@ -75,3 +75,9 @@ agents-thousandeyes-agent: ## Build the ThousandEyes Agent
 
 tools-mcp-weather-server: ## Build the MCP Weather Server
 	$(CONTAINER_ENGINE) build -f tools/mcp/weather_server/Containerfile -t agentic/tools-mcp-weather-server:local tools/mcp/weather_server/
+
+agents-meraki-agent: ## Build the Meraki Agent
+	$(CONTAINER_ENGINE) build -f agents/meraki_agent/Containerfile -t agentic/agents-meraki-agent:local agents/meraki_agent/
+
+tools-mcp-meraki-server: ## Build the MCP Meraki Server
+	$(CONTAINER_ENGINE) build -f tools/mcp/meraki_server/Containerfile -t agentic/tools-mcp-meraki-server:local tools/mcp/meraki_server/

@@ -14,7 +14,9 @@
       "Bash(uv run ruff format:*)",
       "Bash(uv run ruff:*)",
       "Bash(uv run:*)",
-      "Bash(export:*)"
+      "Bash(export:*)",
+      "Bash(make lint:*)",
+      "Bash(make format:*)"
     ]
   }
 }

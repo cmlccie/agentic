@@ -1,0 +1,38 @@
+name: Build MCP Meraki Server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-tools-mcp-meraki-server.yml"
+      - "tools/mcp/meraki_server/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-tools-mcp-meraki-server.yml"
+      - "tools/mcp/meraki_server/**"
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Build Python Base Image"]
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-python-container-image.yml
+    with:
+      image-name: tools-mcp-meraki-server
+      context-path: ./tools/mcp/meraki_server
