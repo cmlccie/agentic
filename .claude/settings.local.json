@@ -16,7 +16,10 @@
       "Bash(uv run:*)",
       "Bash(export:*)",
       "Bash(make lint:*)",
-      "Bash(make format:*)"
+      "Bash(make format:*)",
+      "Bash(git log:*)",
+      "Bash(python3:*)",
+      "Bash(uv pip show:*)"
     ]
   }
 }

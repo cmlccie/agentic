@@ -3,7 +3,7 @@
 # --------------------------------------------------------------------------------------
 
 # Detect container engine (podman or docker)
-CONTAINER_ENGINE := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null)
+CONTAINER_ENGINE := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 
 ifeq ($(CONTAINER_ENGINE),)
 $(error No container engine found. Please install docker or podman)
@@ -55,7 +55,7 @@ check: lint ## Run all checks (lint + format check)
 # Build Targets
 # -------------------------------------------------------------------------------------------------
 
-.PHONY: python-base-image agents-weather-agent agents-thousandeyes-agent agents-meraki-agent tools-mcp-weather-server tools-mcp-meraki-server
+.PHONY: python-base-image agents-weather-agent agents-thousandeyes-agent agents-meraki-agent agents-network-agent tools-mcp-weather-server tools-mcp-meraki-server
 
 images/python/requirements.txt: pyproject.toml uv.lock ## Export requirements.txt for the Python Base Image
 	uv export --no-dev --no-emit-project --format requirements.txt -o images/python/requirements.txt
@@ -67,17 +67,33 @@ images/python/dist: src/ pyproject.toml ## Build the project distribution packag
 python-base-image: images/python/dist images/python/requirements.txt ## Build the Python Base Image
 	$(CONTAINER_ENGINE) build -f images/python/Containerfile -t agentic/python:local images/python/
 
+tools-mcp-weather-server: ## Build the MCP Weather Server
+	$(CONTAINER_ENGINE) build -f tools/mcp/weather_server/Containerfile -t agentic/tools-mcp-weather-server:local tools/mcp/weather_server/
+
 agents-weather-agent: ## Build the Weather Agent
 	$(CONTAINER_ENGINE) build -f agents/weather_agent/Containerfile -t agentic/agents-weather-agent:local agents/weather_agent/
 
-agents-thousandeyes-agent: ## Build the ThousandEyes Agent
-	$(CONTAINER_ENGINE) build -f agents/thousandeyes_agent/Containerfile -t agentic/agents-thousandeyes-agent:local agents/thousandeyes_agent/
-
-tools-mcp-weather-server: ## Build the MCP Weather Server
-	$(CONTAINER_ENGINE) build -f tools/mcp/weather_server/Containerfile -t agentic/tools-mcp-weather-server:local tools/mcp/weather_server/
+tools-mcp-meraki-server: ## Build the MCP Meraki Server
+	$(CONTAINER_ENGINE) build -f tools/mcp/meraki_server/Containerfile -t agentic/tools-mcp-meraki-server:local tools/mcp/meraki_server/
 
 agents-meraki-agent: ## Build the Meraki Agent
 	$(CONTAINER_ENGINE) build -f agents/meraki_agent/Containerfile -t agentic/agents-meraki-agent:local agents/meraki_agent/
 
-tools-mcp-meraki-server: ## Build the MCP Meraki Server
-	$(CONTAINER_ENGINE) build -f tools/mcp/meraki_server/Containerfile -t agentic/tools-mcp-meraki-server:local tools/mcp/meraki_server/
+agents-thousandeyes-agent: ## Build the ThousandEyes Agent
+	$(CONTAINER_ENGINE) build -f agents/thousandeyes_agent/Containerfile -t agentic/agents-thousandeyes-agent:local agents/thousandeyes_agent/
+
+agents-network-agent: ## Build the Network Troubleshooting Agent
+	$(CONTAINER_ENGINE) build -f agents/network_agent/Containerfile -t agentic/agents-network-agent:local agents/network_agent/
+
+
+# -------------------------------------------------------------------------------------------------
+# Development Targets
+# -------------------------------------------------------------------------------------------------
+
+.PHONY:	serve-network-subagents serve-network-agent
+
+serve-network-subagents: tools-mcp-meraki-server agents-meraki-agent agents-thousandeyes-agent ## Serve all Network Troubleshooting Agent sub-agents
+	$(CONTAINER_ENGINE) compose up --remove-orphans
+
+serve-network-agent: ## Run the Network Troubleshooting Agent CLI for development
+	uv run agents/network_agent/network_agent.py cli

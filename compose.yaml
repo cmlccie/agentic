@@ -1,0 +1,64 @@
+services:
+  # ---------------------------------------------------------------------------
+  # MCP Tool Servers
+  # ---------------------------------------------------------------------------
+
+  meraki-mcp-server:
+    image: agentic/tools-mcp-meraki-server:local
+    command: streamable-http
+    ports:
+      - "8001:8000"
+    env_file: compose.env
+    # environment:
+    #   - MERAKI_API_KEY
+    #   - MERAKI_NETWORK_ID
+
+  # ---------------------------------------------------------------------------
+  # Sub-Agents
+  # ---------------------------------------------------------------------------
+
+  meraki-agent:
+    image: agentic/agents-meraki-agent:local
+    command: a2a http://meraki-agent:8000
+    ports:
+      - "8002:8000"
+    env_file: compose.env
+    environment:
+      # - OPENAI_BASE_URL
+      # - OPENAI_API_KEY
+      # - MODEL_NAME
+      - TOOLS_MCP_MERAKI_SERVER_URL=http://meraki-mcp-server:8000/mcp
+    depends_on:
+      - meraki-mcp-server
+
+  thousandeyes-agent:
+    image: agentic/agents-thousandeyes-agent:local
+    command: a2a http://thousandeyes-agent:8000
+    ports:
+      - "8003:8000"
+    env_file: compose.env
+    # environment:
+    #   - OPENAI_BASE_URL
+    #   - OPENAI_API_KEY
+    #   - MODEL_NAME
+    #   - THOUSANDEYES_TOKEN
+
+  # ---------------------------------------------------------------------------
+  # Supervisor Agent
+  # ---------------------------------------------------------------------------
+
+  # network-agent:
+  #   image: agentic/agents-network-agent:local
+  #   command: cli
+  #   stdin_open: true
+  #   tty: true
+  #   env_file: compose.env
+  #   environment:
+  #     # - OPENAI_BASE_URL
+  #     # - OPENAI_API_KEY
+  #     # - MODEL_NAME
+  #     - MERAKI_AGENT_URL=http://meraki-agent:8000
+  #     - THOUSANDEYES_AGENT_URL=http://thousandeyes-agent:8000
+  #   depends_on:
+  #     - meraki-agent
+  #     - thousandeyes-agent
