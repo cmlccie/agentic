@@ -53,6 +53,11 @@ SUB_AGENT_URLS = {
     os.environ["THOUSANDEYES_AGENT_URL"],
 }
 
+# A2A polling configuration
+A2A_REQUEST_TIMEOUT = 30  # seconds per HTTP request
+A2A_POLL_INTERVAL = 5  # seconds between polls
+A2A_MAX_WAIT = 300  # max seconds to wait for task completion (5 minutes)
+
 
 # -------------------------------------------------------------------------------------------------
 # Network Troubleshooting Agent
@@ -130,6 +135,38 @@ def _build_message(content: str) -> Message:
     }
 
 
+TERMINAL_STATES = {"completed", "failed", "canceled", "rejected"}
+
+
+async def _send_and_poll(url: str, content: str) -> str:
+    """Send a message to a sub-agent via A2A and poll until completion."""
+    async with httpx.AsyncClient(timeout=A2A_REQUEST_TIMEOUT) as http_client:
+        client = A2AClient(base_url=url, http_client=http_client)
+        msg = _build_message(content)
+
+        response = await client.send_message(msg)
+        task = response["result"]
+        task_id = task["id"]
+        state = task["status"]["state"]
+
+        if state in TERMINAL_STATES:
+            return _extract_text(response)
+
+        elapsed = 0
+        while elapsed < A2A_MAX_WAIT:
+            await asyncio.sleep(A2A_POLL_INTERVAL)
+            elapsed += A2A_POLL_INTERVAL
+            task_response = await client.get_task(task_id)
+            state = task_response["result"]["status"]["state"]
+            if state in TERMINAL_STATES:
+                return _extract_text(task_response)
+
+        return (
+            f"Task timed out after {A2A_MAX_WAIT}s "
+            f"(task: {task_id}, last state: {state})"
+        )
+
+
 @agent.tool_plain
 async def discover_agents() -> str:
     """Discover available sub-agents and their capabilities.
@@ -189,12 +226,9 @@ async def send_task(agent_name: str, message: str) -> str:
         available = ", ".join(agent_urls.keys()) or "none (run discover_agents first)"
         return f"Unknown agent '{agent_name}'. Available agents: {available}"
 
-    client = A2AClient(base_url=url)
-    msg = _build_message(message)
-
     try:
-        response = await client.send_message(msg)
-        return f"**{agent_name}** responded:\n\n{_extract_text(response)}"
+        text = await _send_and_poll(url, message)
+        return f"**{agent_name}** responded:\n\n{text}"
     except Exception as e:
         return f"Error communicating with {agent_name}: {e}"
 
@@ -229,12 +263,9 @@ async def send_tasks_parallel(tasks: str) -> str:
             )
             return f"**{name}**: Unknown agent. Available agents: {available}"
 
-        client = A2AClient(base_url=url)
-        msg = _build_message(content)
-
         try:
-            response = await client.send_message(msg)
-            return f"**{name}** responded:\n\n{_extract_text(response)}"
+            text = await _send_and_poll(url, content)
+            return f"**{name}** responded:\n\n{text}"
         except Exception as e:
             return f"**{name}**: Error — {e}"
 
