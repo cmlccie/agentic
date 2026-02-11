@@ -90,7 +90,7 @@ class Client(BaseModel):
 @agentic.logging.log_call(logger)
 def list_clients(
     timespan: int = 86400,
-    per_page: int = 50,
+    per_page: int = 100,
 ) -> list[Client]:
     """List clients on the network.
     Args:
