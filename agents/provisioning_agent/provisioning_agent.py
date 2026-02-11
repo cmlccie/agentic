@@ -49,12 +49,12 @@ agent_tools = [MCPServerStreamableHTTP(url=TOOLS_MCP_PROVISIONING_SERVER_URL)]
 agent = Agent(
     model=model,
     output_type=str,
-    system_prompt=system_prompt,
+    instructions=system_prompt,
     toolsets=agent_tools,
 )
 
 
-@agent.system_prompt
+@agent.instructions
 def add_date_info() -> str:
     """Dynamic system prompt - adds current date information to the system prompt."""
     # Example: Thursday, December 25, 2025 (2025-12-25)

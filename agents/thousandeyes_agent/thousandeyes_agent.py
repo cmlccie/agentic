@@ -86,14 +86,14 @@ model_settings = ModelSettings(
 
 agent = Agent(
     model=model,
-    system_prompt=system_prompt,
+    instructions=system_prompt,
     toolsets=[filtered_tools],
     model_settings=model_settings,
     output_type=str,
 )
 
 
-@agent.system_prompt
+@agent.instructions
 def add_datetime_info() -> str:
     """Dynamic system prompt - adds current UTC datetime for use in API time parameters."""
     now = datetime.now(timezone.utc)
