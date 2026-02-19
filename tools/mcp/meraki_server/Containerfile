@@ -1,0 +1,17 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="MCP Meraki Server"
+LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) server that wraps Cisco Meraki Dashboard API v1 endpoints."
+LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+COPY meraki_server.py README.md ./
+RUN chmod +x meraki_server.py
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port 8000 for HTTP transport (when using streamable-http mode)
+EXPOSE 8000
+
+ENTRYPOINT ["/app/meraki_server.py"]
+CMD ["stdio"]

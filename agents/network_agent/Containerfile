@@ -1,0 +1,16 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="Network Troubleshooting Agent"
+LABEL org.opencontainers.image.description="A supervisor agent that coordinates Meraki and ThousandEyes agents for network troubleshooting."
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+COPY network_agent.py system_prompt.md ./
+RUN chmod +x network_agent.py
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port 8000 for HTTP agent endpoints
+EXPOSE 8000
+
+ENTRYPOINT ["/app/network_agent.py"]
+CMD ["openai-api"]

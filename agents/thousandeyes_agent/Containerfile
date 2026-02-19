@@ -1,0 +1,17 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="ThousandEyes Agent"
+LABEL org.opencontainers.image.description="A Pydantic AI agent that troubleshoots application connectivity using ThousandEyes."
+LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+COPY thousandeyes_agent.py system_prompt.md README.md ./
+RUN chmod +x thousandeyes_agent.py
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port 8000 for HTTP agent endpoints
+EXPOSE 8000
+
+ENTRYPOINT ["/app/thousandeyes_agent.py"]
+CMD ["openai-api"]

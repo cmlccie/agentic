@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "mcp__claude_ai_Hugging_Face__hf_doc_search",
+      "WebFetch(domain:docs.thousandeyes.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:developer.cisco.com)",
+      "mcp__claude_ai_Hugging_Face__hf_doc_fetch",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:developer.thousandeyes.com)",
+      "WebFetch(domain:www.thousandeyes.com)",
+      "Bash(chmod:*)",
+      "Bash(uv run ruff format:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run:*)",
+      "Bash(export:*)",
+      "Bash(make lint:*)",
+      "Bash(make format:*)",
+      "Bash(git log:*)",
+      "Bash(python3:*)",
+      "Bash(uv pip show:*)"
+    ]
+  }
+}

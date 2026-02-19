@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Provisioning Agent using Pydantic AI and MCP tools."""
+"""Meraki Agent using Pydantic AI and MCP tools."""
 
 import os
-import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
@@ -11,6 +11,7 @@ from fasta2a import Skill
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStreamableHTTP
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.settings import ModelSettings
 
 from agentic.openai import OpenAICompatibleAPI
 
@@ -24,7 +25,7 @@ required_env_vars = [
     "OPENAI_BASE_URL",
     "OPENAI_API_KEY",
     "MODEL_NAME",
-    "TOOLS_MCP_PROVISIONING_SERVER_URL",
+    "TOOLS_MCP_MERAKI_SERVER_URL",
 ]
 
 # Check for required environment variables
@@ -34,32 +35,35 @@ for var in required_env_vars:
 
 
 # -------------------------------------------------------------------------------------------------
-# Provisioning Agent
+# Meraki Agent
 # -------------------------------------------------------------------------------------------------
 
 MODEL_NAME = os.environ["MODEL_NAME"]
 SYSTEM_PROMPT_PATH = "system_prompt.md"
-TOOLS_MCP_PROVISIONING_SERVER_URL = os.environ["TOOLS_MCP_PROVISIONING_SERVER_URL"]
-
+TOOLS_MCP_MERAKI_SERVER_URL = os.environ["TOOLS_MCP_MERAKI_SERVER_URL"]
 
 model = OpenAIChatModel(model_name=MODEL_NAME)
 system_prompt = (here / SYSTEM_PROMPT_PATH).read_text()
-agent_tools = [MCPServerStreamableHTTP(url=TOOLS_MCP_PROVISIONING_SERVER_URL)]
+agent_tools = [MCPServerStreamableHTTP(url=TOOLS_MCP_MERAKI_SERVER_URL)]
+
+model_settings = ModelSettings(
+    temperature=0.2,
+)
 
 agent = Agent(
     model=model,
-    output_type=str,
     instructions=system_prompt,
     toolsets=agent_tools,
+    model_settings=model_settings,
+    output_type=str,
 )
 
 
 @agent.instructions
-def add_date_info() -> str:
-    """Dynamic system prompt - adds current date information to the system prompt."""
-    # Example: Thursday, December 25, 2025 (2025-12-25)
-    current_date = time.strftime("%A, %B %d, %Y (%Y-%m-%d)")
-    return f"Today is {current_date}."
+def add_datetime_info() -> str:
+    """Dynamic system prompt - adds current UTC datetime."""
+    now = datetime.now(timezone.utc)
+    return f"The current UTC date and time is {now.strftime('%Y-%m-%dT%H:%M:%SZ')}."
 
 
 # --------------------------------------------------------------------------------------
@@ -68,40 +72,16 @@ def add_date_info() -> str:
 
 agent_skills = [
     Skill(
-        id="provision-server",
-        name="Provision Server",
-        description="Provision a new server with specified resources.",
-        tags=["provisioning", "server", "infrastructure"],
+        id="troubleshoot-client-connectivity",
+        name="Troubleshoot Client Connectivity",
+        description="Troubleshoot wireless client connectivity issues on a Meraki network.",
+        tags=["network", "wireless", "meraki", "troubleshooting"],
         examples=[
-            "Provision a server named web-server-01 with 4 CPU cores, 16GB RAM, and 100GB storage on VLAN 100.",
-            "Create a new server called db-server with 8 cores and 32GB memory.",
-            "Set up a server with 2 CPUs and 8GB RAM on VLAN 200.",
-        ],
-        input_modes=["text/plain"],
-        output_modes=["text/plain"],
-    ),
-    Skill(
-        id="provision-vlan",
-        name="Provision VLAN",
-        description="Provision a new VLAN with specified configuration.",
-        tags=["provisioning", "vlan", "network", "infrastructure"],
-        examples=[
-            "Create VLAN 100 named 'production' with CIDR 10.0.100.0/24.",
-            "Provision a new VLAN with ID 200 for the development environment.",
-            "Set up VLAN 300 called 'dmz' with network 192.168.1.0/24.",
-        ],
-        input_modes=["text/plain"],
-        output_modes=["text/plain"],
-    ),
-    Skill(
-        id="check-vlan",
-        name="Check VLAN",
-        description="Check if a VLAN exists.",
-        tags=["provisioning", "vlan", "network", "infrastructure"],
-        examples=[
-            "Does VLAN 100 exist?",
-            "Check if VLAN 200 is available.",
-            "Is there a VLAN with ID 300?",
+            "Show me all clients on the network.",
+            "Check the health of client DESKTOP-ABC.",
+            "Why is the client at 00:11:22:33:44:55 having connectivity issues?",
+            "Show me connection stats for client k74272e over the last 7 days.",
+            "What connectivity events has this client experienced?",
         ],
         input_modes=["text/plain"],
         output_modes=["text/plain"],
@@ -113,13 +93,13 @@ agent_skills = [
 # Agent Interfaces
 # -------------------------------------------------------------------------------------------------
 
-app = typer.Typer(no_args_is_help=True, help="Provisioning Agent")
+app = typer.Typer(no_args_is_help=True, help="Meraki Agent")
 
 
 @app.command(short_help="Command Line Interface (CLI)")
 def cli():
     """Command Line Interface (CLI)."""
-    agent.to_cli_sync(prog_name="provisioning-agent")
+    agent.to_cli_sync(prog_name="meraki-agent")
 
 
 @app.command(short_help="Agent2Agent (A2A) Interface")
@@ -130,8 +110,8 @@ def a2a(agent_url: str, host: str | None = None, port: int | None = None):
     port = port or int(os.environ.get("PORT", 8000))
 
     a2a_app = agent.to_a2a(
-        name="Provisioning Agent",
-        description="IT infrastructure provisioning agent.",
+        name="Meraki Agent",
+        description="Troubleshoots wireless client connectivity issues on a Meraki network.",
         url=agent_url,
         skills=agent_skills,
         debug=True,
@@ -149,8 +129,8 @@ def openai_api(host: str | None = None, port: int | None = None):
 
     openai_api = OpenAICompatibleAPI(
         agent=agent,
-        title="Provisioning Agent OpenAI Compatible API",
-        description="OpenAI-compatible API for the Provisioning Agent.",
+        title="Meraki Agent OpenAI Compatible API",
+        description="OpenAI-compatible API for the Meraki Agent.",
         model_name=MODEL_NAME,
     )
 
