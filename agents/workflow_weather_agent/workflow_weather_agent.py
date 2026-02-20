@@ -13,32 +13,24 @@ Key Design Principles:
 - Model only for intent extraction and natural language summaries
 """
 
-import asyncio
 import json
 import logging
 import os
-import time
 from datetime import date, timedelta
 from pathlib import Path
 from textwrap import dedent
-from typing import Annotated, AsyncGenerator, Literal, cast
-from uuid import uuid4
+from typing import Annotated, cast
 
-import typer
-import uvicorn
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
 from fastmcp import Client as FastMCPClient
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field, SecretStr
-from rich.console import Console
-from rich.markdown import Markdown
 from tabulate import tabulate
 from typing_extensions import TypedDict
+
+from agentic.langchain.fastmcp import mcp_tools
 
 logger = logging.getLogger(__name__)
 
@@ -277,49 +269,6 @@ def format_weather_forecast(location_name: str, weather_data: dict) -> str:
 
 
 # -------------------------------------------------------------------------------------------------
-# MCP Clients
-# -------------------------------------------------------------------------------------------------
-
-mcp_tools_client: MultiServerMCPClient | None = None
-mcp_resources_client: FastMCPClient | None = None
-
-
-async def get_mcp_tools_client() -> MultiServerMCPClient:
-    """Get the MCP tools client."""
-    global mcp_tools_client
-    if mcp_tools_client is None:
-        mcp_tools_client = MultiServerMCPClient(
-            {
-                "weather": {
-                    "url": MCP_WEATHER_SERVER_URL,
-                    "transport": "streamable_http",
-                }
-            }
-        )
-    return mcp_tools_client
-
-
-async def get_mcp_resources_client() -> FastMCPClient:
-    """Get the MCP resources client."""
-    global mcp_resources_client
-    if mcp_resources_client is None:
-        mcp_resources_client = FastMCPClient(MCP_WEATHER_SERVER_URL)
-        await mcp_resources_client.__aenter__()
-    return mcp_resources_client
-
-
-async def close_mcp_clients() -> None:
-    """Close the MCP clients."""
-    global mcp_tools_client, mcp_resources_client
-    if mcp_tools_client is not None:
-        # MultiServerMCPClient doesn't require explicit cleanup
-        mcp_tools_client = None
-    if mcp_resources_client is not None:
-        await mcp_resources_client.__aexit__(None, None, None)
-        mcp_resources_client = None
-
-
-# -------------------------------------------------------------------------------------------------
 # Graph Nodes
 # -------------------------------------------------------------------------------------------------
 
@@ -330,8 +279,8 @@ async def fetch_cached_locations(state: WeatherAgentState) -> dict:
     cached_locations = state.get("cached_locations", {}) or {}
 
     try:
-        client = await get_mcp_resources_client()
-        result = await client.read_resource("locations://cache")
+        async with FastMCPClient(MCP_WEATHER_SERVER_URL) as client:
+            result = await client.read_resource("locations://cache")
 
         if result:
             content = result[0]
@@ -352,7 +301,7 @@ async def fetch_cached_locations(state: WeatherAgentState) -> dict:
             cached_locations.update(retrieved_locations)
             return {"cached_locations": cached_locations}
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to fetch cached locations: {e}")
 
     return {"cached_locations": cached_locations}
@@ -396,24 +345,24 @@ async def extract_intent(state: WeatherAgentState) -> dict:
 
 async def lookup_location(state: WeatherAgentState) -> dict:
     """Call get_locations MCP tool to find location options."""
-    client = await get_mcp_tools_client()
     location_query = state.get("location_query", "")
 
     try:
-        tools = await client.get_tools()
-        get_locations_tool = next((t for t in tools if t.name == "get_locations"), None)
-        if get_locations_tool is None:
-            raise ValueError("get_locations tool not found")
+        async with FastMCPClient(MCP_WEATHER_SERVER_URL) as client:
+            lc_tools = await mcp_tools(client)
+            get_locations_tool = next(
+                (t for t in lc_tools if t.name == "get_locations"), None
+            )
+            if get_locations_tool is None:
+                raise ValueError("get_locations tool not found")
 
-        # LangChain MCP adapter returns list of content items with 'text' field
-        result_content = await get_locations_tool.ainvoke({"name": location_query})
-        # Parse the first content item's text field which contains JSON
-        locations_response = json.loads(result_content[0]["text"])
+            result_text = await get_locations_tool.ainvoke({"name": location_query})
+        locations_response = json.loads(result_text)
         locations = [
             LocationOption.model_validate(loc) for loc in locations_response["result"]
         ]
         return {"location_options": locations}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to lookup location: {e}")
         return {"location_options": []}
 
@@ -489,7 +438,6 @@ async def resolve_location(state: WeatherAgentState) -> dict:
 
 async def fetch_weather(state: WeatherAgentState) -> dict:
     """Call get_weather_forecast MCP tool."""
-    client = await get_mcp_tools_client()
     coords = state["coordinates"]
     dates = state.get("date_range") or default_date_range()
 
@@ -514,25 +462,24 @@ async def fetch_weather(state: WeatherAgentState) -> dict:
         end_date = dates.end_date
 
     try:
-        tools = await client.get_tools()
-        weather_tool = next(
-            (t for t in tools if t.name == "get_weather_forecast"), None
-        )
-        if weather_tool is None:
-            raise ValueError("get_weather_forecast tool not found")
-        # LangChain MCP adapter returns list of content items with 'text' field
-        result_content = await weather_tool.ainvoke(
-            {
-                "latitude": latitude,
-                "longitude": longitude,
-                "start_date": start_date,
-                "end_date": end_date,
-            },
-        )
-        # Parse the first content item's text field which contains JSON
-        weather_data = json.loads(result_content[0]["text"])
+        async with FastMCPClient(MCP_WEATHER_SERVER_URL) as client:
+            lc_tools = await mcp_tools(client)
+            weather_tool = next(
+                (t for t in lc_tools if t.name == "get_weather_forecast"), None
+            )
+            if weather_tool is None:
+                raise ValueError("get_weather_forecast tool not found")
+            result_text = await weather_tool.ainvoke(
+                {
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+            )
+        weather_data = json.loads(result_text)
         return {"weather_data": weather_data}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Failed to fetch weather: {e}")
 
     return {"weather_data": None}
@@ -665,317 +612,3 @@ agent_skills = [
         "output_modes": ["text/plain"],
     }
 ]
-
-
-# -------------------------------------------------------------------------------------------------
-# CLI Interface
-# -------------------------------------------------------------------------------------------------
-
-app = typer.Typer(no_args_is_help=True, help="Workflow Weather Agent")
-console = Console()
-
-
-@app.command(short_help="Interactive command-line interface")
-def cli():
-    """Interactive CLI for the weather agent."""
-
-    console.print("[bold blue]Weather Agent[/bold blue] - Type 'exit' to quit\n")
-
-    async def run_cli():
-        # Maintain full state across turns (not just messages)
-        state: WeatherAgentState = {
-            "messages": [],
-            "cached_locations": [],
-            "coordinates": None,
-            "date_range": None,
-            "location_query": None,
-            "location_name": None,
-            "location_options": None,
-            "weather_data": None,
-            "needs_user_input": False,
-            "user_prompt": None,
-        }
-
-        try:
-            while True:
-                user_input = console.input("[bold green]❯[/bold green] ")
-                if user_input.lower() in ("exit", "quit", "q"):
-                    break
-
-                # Add user message to state
-                state["messages"].append(HumanMessage(content=user_input))
-
-                # Invoke the graph with current state
-                result = await weather_agent.ainvoke(state)
-
-                # Update state with result (preserves coordinates, location_name, etc.)
-                state.update(result)  # type: ignore[arg-type]
-
-                # Get the last AI message and display it
-                messages = result.get("messages", [])
-                for msg in reversed(messages):
-                    if isinstance(msg, AIMessage):
-                        content = (
-                            msg.content
-                            if isinstance(msg.content, str)
-                            else str(msg.content)
-                        )
-                        console.print()
-                        console.print(Markdown(content))
-                        console.print()
-                        break
-
-        finally:
-            await close_mcp_clients()
-
-    asyncio.run(run_cli())
-
-
-# -------------------------------------------------------------------------------------------------
-# Server Interface (OpenAI API + A2A)
-# -------------------------------------------------------------------------------------------------
-
-
-def create_openai_router(graph):
-    """Create OpenAI-compatible API router."""
-    from fastapi import APIRouter
-
-    router = APIRouter()
-
-    class Message(BaseModel):
-        role: Literal["system", "user", "assistant"]
-        content: str
-
-    class ChatCompletionRequest(BaseModel):
-        model: str = "default"
-        messages: list[Message]
-        stream: bool = False
-
-    class ChatCompletionChoice(BaseModel):
-        index: int
-        message: Message
-        finish_reason: str
-
-    class Usage(BaseModel):
-        prompt_tokens: int
-        completion_tokens: int
-        total_tokens: int
-
-    class ChatCompletionResponse(BaseModel):
-        id: str
-        object: str = "chat.completion"
-        created: int
-        model: str
-        choices: list[ChatCompletionChoice]
-        usage: Usage
-
-    class ChatCompletionStreamChoice(BaseModel):
-        index: int
-        delta: dict[str, str]
-        finish_reason: str | None = None
-
-    class ChatCompletionStreamResponse(BaseModel):
-        id: str
-        object: str = "chat.completion.chunk"
-        created: int
-        model: str
-        choices: list[ChatCompletionStreamChoice]
-
-    @router.post("/chat/completions")
-    async def chat_completions(request: ChatCompletionRequest):
-        completion_id = f"chatcmpl-{uuid4().hex[:8]}"
-        created = int(time.time())
-
-        # Convert messages to LangChain format
-        lc_messages = []
-        for msg in request.messages:
-            if msg.role == "user":
-                lc_messages.append(HumanMessage(content=msg.content))
-            elif msg.role == "assistant":
-                lc_messages.append(AIMessage(content=msg.content))
-            elif msg.role == "system":
-                lc_messages.append(SystemMessage(content=msg.content))
-
-        # Invoke the graph with full conversation history
-        result = await graph.ainvoke(
-            {
-                "messages": lc_messages,
-                "cached_locations": [],
-                "coordinates": None,
-                "date_range": None,
-                "location_query": None,
-                "location_name": None,
-                "location_options": None,
-                "weather_data": None,
-                "needs_user_input": False,
-                "user_prompt": None,
-            }
-        )
-
-        # Get response
-        response_content = ""
-        messages = result.get("messages", [])
-        for msg in reversed(messages):
-            if isinstance(msg, AIMessage):
-                response_content = (
-                    msg.content if isinstance(msg.content, str) else str(msg.content)
-                )
-                break
-
-        if request.stream:
-
-            async def generate_stream() -> AsyncGenerator[str, None]:
-                # Send content in chunks
-                chunk = ChatCompletionStreamResponse(
-                    id=completion_id,
-                    created=created,
-                    model=request.model,
-                    choices=[
-                        ChatCompletionStreamChoice(
-                            index=0,
-                            delta={"role": "assistant", "content": response_content},
-                            finish_reason=None,
-                        )
-                    ],
-                )
-                yield f"data: {chunk.model_dump_json()}\n\n"
-
-                # Final chunk
-                final_chunk = ChatCompletionStreamResponse(
-                    id=completion_id,
-                    created=created,
-                    model=request.model,
-                    choices=[
-                        ChatCompletionStreamChoice(
-                            index=0,
-                            delta={},
-                            finish_reason="stop",
-                        )
-                    ],
-                )
-                yield f"data: {final_chunk.model_dump_json()}\n\n"
-                yield "data: [DONE]\n\n"
-
-            return StreamingResponse(
-                generate_stream(),
-                media_type="text/event-stream",
-            )
-
-        return ChatCompletionResponse(
-            id=completion_id,
-            created=created,
-            model=request.model,
-            choices=[
-                ChatCompletionChoice(
-                    index=0,
-                    message=Message(role="assistant", content=response_content),
-                    finish_reason="stop",
-                )
-            ],
-            usage=Usage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
-        )
-
-    return router
-
-
-def create_a2a_router(graph, agent_url: str, skills: list[dict]):
-    """Create A2A protocol router."""
-    from fastapi import APIRouter
-
-    router = APIRouter()
-
-    # A2A Agent Card
-    @router.get("/.well-known/agent.json")
-    async def agent_card():
-        return {
-            "name": "Weather Agent",
-            "description": "Weather forecast agent using LangGraph workflow.",
-            "url": agent_url,
-            "skills": skills,
-            "version": "1.0.0",
-        }
-
-    # A2A Task endpoint
-    @router.post("/tasks")
-    async def create_task(request: dict):
-        message = request.get("message", {})
-        content = message.get("content", "")
-
-        # A2A might include conversation history in the request
-        # For now, create a single HumanMessage with the content
-        messages = [HumanMessage(content=content)]
-
-        # Invoke the graph
-        result = await graph.ainvoke(
-            {
-                "messages": messages,
-                "cached_locations": [],
-                "coordinates": None,
-                "date_range": None,
-                "location_query": None,
-                "location_name": None,
-                "location_options": None,
-                "weather_data": None,
-                "needs_user_input": False,
-                "user_prompt": None,
-            }
-        )
-
-        # Get response
-        response_content = ""
-        messages = result.get("messages", [])
-        for msg in reversed(messages):
-            if isinstance(msg, AIMessage):
-                response_content = msg.content
-                break
-
-        return {
-            "id": str(uuid4()),
-            "status": "completed",
-            "result": {"content": response_content},
-        }
-
-    return router
-
-
-@app.command(short_help="Serve OpenAI API and A2A endpoints")
-def server(
-    host: str = typer.Option("0.0.0.0", help="Host to bind to"),
-    port: int = typer.Option(8000, help="Port to listen on"),
-    agent_url: str = typer.Option(
-        None, help="Agent URL for A2A (defaults to http://host:port)"
-    ),
-):
-    """Start the server with both OpenAI-compatible API and A2A endpoints."""
-    if agent_url is None:
-        agent_url = f"http://{host}:{port}"
-
-    fastapi_app = FastAPI(title="Weather Agent", version="1.0.0")
-
-    # Mount OpenAI-compatible routes
-    openai_router = create_openai_router(weather_agent)
-    fastapi_app.include_router(openai_router, prefix="/v1", tags=["OpenAI Compatible"])
-
-    # Mount A2A routes
-    a2a_router = create_a2a_router(weather_agent, agent_url, agent_skills)
-    fastapi_app.include_router(a2a_router, tags=["A2A Protocol"])
-
-    # Health check
-    @fastapi_app.get("/health")
-    async def health():
-        return {"status": "healthy"}
-
-    @fastapi_app.get("/")
-    async def root():
-        return {"message": "Weather Agent is running", "endpoints": ["/v1", "/a2a"]}
-
-    console.print("[bold blue]Weather Agent Server[/bold blue]")
-    console.print(f"  OpenAI API: http://{host}:{port}/v1/chat/completions")
-    console.print(f"  A2A Agent Card: http://{host}:{port}/.well-known/agent.json")
-    console.print(f"  A2A Tasks: http://{host}:{port}/tasks")
-
-    uvicorn.run(fastapi_app, host=host, port=port)
-
-
-if __name__ == "__main__":
-    app()
