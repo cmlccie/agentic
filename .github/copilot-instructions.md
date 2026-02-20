@@ -51,6 +51,26 @@ The following instruction files contain specific rules for modifying or creating
   - `fancy_config()` - Full formatting with timestamps and log levels.
   - `silent_config()` - Disables logging output entirely.
 
+## Testing
+
+### Running Tests
+
+- Run all tests: `make test` or `uv run pytest`
+- Run tests with a coverage report: `make test-cov`
+
+### Test Directory Structure
+
+Tests live in `tests/` and mirror the `src/` directory structure.
+A module at `src/agentic/some_module.py` has its tests at `tests/agentic/test_some_module.py`.
+
+### Writing Tests
+
+- Use `pytest` for all tests.
+- Use `pytest-asyncio` for async tests. `asyncio_mode = "auto"` is configured in `pyproject.toml`, so no `@pytest.mark.asyncio` decorator is required.
+- Follow functional style: use fixture functions, not test classes (per `python.instructions.md`).
+- Include module-level docstrings and docstrings on all test functions.
+- Place fixtures used by a single package in a `conftest.py` within that package's test directory. Place project-wide fixtures in `tests/conftest.py`.
+
 ## Critical Implementation Details
 
 ## Avoid
