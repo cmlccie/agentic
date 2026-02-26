@@ -1,0 +1,38 @@
+name: Build Network Agent
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-agents-network-agent.yml"
+      - "agents/network_agent/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-agents-network-agent.yml"
+      - "agents/network_agent/**"
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Build Python Base Image"]
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-python-container-image.yml
+    with:
+      image-name: agents-network-agent
+      context-path: ./agents/network_agent
