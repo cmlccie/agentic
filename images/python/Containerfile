@@ -22,7 +22,7 @@ RUN apk add --no-cache git && pip install --no-cache-dir -r /opt/base-image/requ
 # - Locally via: uv build --sdist --out-dir images/python/dist
 # - In CI/CD via: download-artifact action placing files in images/python/dist
 COPY --chown=root:root ./dist/*.tar.gz /opt/base-image/dist/
-RUN pip install --no-cache-dir /opt/base-image/dist/*.tar.gz
+RUN pip install --no-cache-dir --no-deps /opt/base-image/dist/*.tar.gz
 
 
 # --------------------------------------------------------------------------------------
