@@ -7,6 +7,11 @@ LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
 COPY meraki_agent.py system_prompt.md README.md ./
 RUN chmod +x meraki_agent.py
+
+# Override pydantic-ai-slim with forked fix (dev/issue-2818)
+RUN pip install --no-cache-dir \
+    "git+https://github.com/cmlccie/pydantic-ai.git@dev/issue-2818#subdirectory=pydantic_ai_slim"
+
 RUN chown -R appuser:appuser /app
 USER appuser
 
