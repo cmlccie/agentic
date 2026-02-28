@@ -1181,8 +1181,8 @@ email = [
 
 [[package]]
 name = "pydantic-ai-slim"
-version = "0.0.1.dev1764+0f6da566"
-source = { git = "https://github.com/cmlccie/pydantic-ai.git?subdirectory=pydantic_ai_slim&branch=dev%2Fissue-2818#0f6da56668584f475b9ef6b3026bcf9c01da9e1d" }
+version = "0.0.1.dev1765+fd3c5feb"
+source = { git = "https://github.com/cmlccie/pydantic-ai.git?subdirectory=pydantic_ai_slim&branch=dev%2Fissue-2818#fd3c5feb66975b8317cd21aefdf9dd297c30d0c7" }
 dependencies = [
     { name = "genai-prices" },
     { name = "griffelib" },
@@ -1269,8 +1269,8 @@ wheels = [
 
 [[package]]
 name = "pydantic-graph"
-version = "0.0.1.dev1764+0f6da566"
-source = { git = "https://github.com/cmlccie/pydantic-ai.git?subdirectory=pydantic_graph&branch=dev%2Fissue-2818#0f6da56668584f475b9ef6b3026bcf9c01da9e1d" }
+version = "0.0.1.dev1765+fd3c5feb"
+source = { git = "https://github.com/cmlccie/pydantic-ai.git?subdirectory=pydantic_graph&branch=dev%2Fissue-2818#fd3c5feb66975b8317cd21aefdf9dd297c30d0c7" }
 dependencies = [
     { name = "httpx" },
     { name = "logfire-api" },

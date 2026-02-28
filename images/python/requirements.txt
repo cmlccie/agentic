@@ -217,11 +217,11 @@ pydantic==2.12.5
     #   pydantic-ai-slim
     #   pydantic-graph
     #   pydantic-settings
-pydantic-ai-slim @ git+https://github.com/cmlccie/pydantic-ai.git@0f6da56668584f475b9ef6b3026bcf9c01da9e1d#subdirectory=pydantic_ai_slim
+pydantic-ai-slim @ git+https://github.com/cmlccie/pydantic-ai.git@fd3c5feb66975b8317cd21aefdf9dd297c30d0c7#subdirectory=pydantic_ai_slim
     # via agentic
 pydantic-core==2.41.5
     # via pydantic
-pydantic-graph @ git+https://github.com/cmlccie/pydantic-ai.git@0f6da56668584f475b9ef6b3026bcf9c01da9e1d#subdirectory=pydantic_graph
+pydantic-graph @ git+https://github.com/cmlccie/pydantic-ai.git@fd3c5feb66975b8317cd21aefdf9dd297c30d0c7#subdirectory=pydantic_graph
     # via pydantic-ai-slim
 pydantic-settings==2.13.1
     # via mcp
