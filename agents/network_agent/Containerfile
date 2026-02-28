@@ -8,7 +8,8 @@ COPY network_agent.py system_prompt.md ./
 RUN chmod +x network_agent.py
 
 # Override pydantic-ai-slim with forked fix (dev/issue-2818)
-RUN pip install --no-cache-dir \
+RUN apk add --no-cache git && pip install --no-cache-dir \
+    "git+https://github.com/cmlccie/pydantic-ai.git@dev/issue-2818#subdirectory=pydantic_graph" \
     "git+https://github.com/cmlccie/pydantic-ai.git@dev/issue-2818#subdirectory=pydantic_ai_slim"
 
 RUN chown -R appuser:appuser /app
