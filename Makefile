@@ -58,7 +58,7 @@ check: lint ## Run all checks (lint + format check)
 .PHONY: python-base-image agents-weather-agent agents-thousandeyes-agent agents-meraki-agent agents-network-agent tools-mcp-weather-server tools-mcp-meraki-server
 
 images/python/requirements.txt: pyproject.toml uv.lock ## Export requirements.txt for the Python Base Image
-	uv export --no-dev --no-emit-project --format requirements.txt -o images/python/requirements.txt
+	uv export --no-dev --no-emit-project --no-hashes --format requirements.txt -o images/python/requirements.txt
 
 images/python/dist: src/ pyproject.toml ## Build the project distribution packages for the Python Base Image
 	rm -rf images/python/dist

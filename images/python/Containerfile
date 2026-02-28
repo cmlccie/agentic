@@ -10,7 +10,7 @@ LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 # --------------------------------------------------------------------------------------
 
 COPY requirements.txt /opt/base-image/requirements.txt
-RUN pip install --no-cache-dir -r /opt/base-image/requirements.txt
+RUN apk add --no-cache git && pip install --no-cache-dir -r /opt/base-image/requirements.txt
 
 
 # --------------------------------------------------------------------------------------

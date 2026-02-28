@@ -43,6 +43,16 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentic"]
 
+# --------------------------------------------------------------------------------------
+# Dependency Sources
+# --------------------------------------------------------------------------------------
+
+# Temporary override: use forked pydantic-ai until fix for issue-2818 is merged upstream.
+# Remove this section and run `uv sync` once the fix is released to PyPI.
+[tool.uv.sources]
+pydantic-ai-slim = { git = "https://github.com/cmlccie/pydantic-ai.git", branch = "dev/issue-2818", subdirectory = "pydantic_ai_slim" }
+pydantic-graph = { git = "https://github.com/cmlccie/pydantic-ai.git", branch = "dev/issue-2818", subdirectory = "pydantic_graph" }
+
 [tool.ruff]
 line-length = 88
 indent-width = 4
