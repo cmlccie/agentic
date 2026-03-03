@@ -26,11 +26,11 @@ attrs==25.4.0
     #   cyclopts
     #   jsonschema
     #   referencing
-authlib==1.6.8
+authlib==1.6.9
     # via fastmcp
 beartype==0.22.9
     # via py-key-value-aio
-cachetools==7.0.1
+cachetools==7.0.2
     # via py-key-value-aio
 caio==0.9.25
     # via aiofile
@@ -73,7 +73,7 @@ exceptiongroup==1.3.1
     # via fastmcp
 fasta2a==0.6.0
     # via pydantic-ai-slim
-fastapi==0.134.0
+fastapi==0.135.1
     # via
     #   a2a-sdk
     #   agentic
@@ -217,11 +217,11 @@ pydantic==2.12.5
     #   pydantic-ai-slim
     #   pydantic-graph
     #   pydantic-settings
-pydantic-ai-slim @ git+https://github.com/cmlccie/pydantic-ai.git@fd3c5feb66975b8317cd21aefdf9dd297c30d0c7#subdirectory=pydantic_ai_slim
+pydantic-ai-slim==1.64.0
     # via agentic
 pydantic-core==2.41.5
     # via pydantic
-pydantic-graph @ git+https://github.com/cmlccie/pydantic-ai.git@fd3c5feb66975b8317cd21aefdf9dd297c30d0c7#subdirectory=pydantic_graph
+pydantic-graph==1.64.0
     # via pydantic-ai-slim
 pydantic-settings==2.13.1
     # via mcp
@@ -233,7 +233,7 @@ pyperclip==1.11.0
     # via
     #   fastmcp
     #   pydantic-ai-slim
-python-dotenv==1.2.1
+python-dotenv==1.2.2
     # via
     #   fastmcp
     #   mcp
