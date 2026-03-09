@@ -30,7 +30,7 @@ authlib==1.6.9
     # via fastmcp
 beartype==0.22.9
     # via py-key-value-aio
-cachetools==7.0.2
+cachetools==7.0.4
     # via py-key-value-aio
 caio==0.9.25
     # via aiofile
@@ -41,7 +41,7 @@ certifi==2026.2.25
     #   requests
 cffi==2.0.0 ; platform_python_implementation != 'PyPy'
     # via cryptography
-charset-normalizer==3.4.4
+charset-normalizer==3.4.5
     # via requests
 click==8.3.1
     # via
@@ -57,7 +57,7 @@ cryptography==46.0.5
     #   google-auth
     #   pyjwt
     #   secretstorage
-cyclopts==4.6.0
+cyclopts==4.8.0
     # via fastmcp
 distro==1.9.0
     # via openai
@@ -77,7 +77,7 @@ fastapi==0.135.1
     # via
     #   a2a-sdk
     #   agentic
-fastmcp==3.0.2
+fastmcp==3.1.0
     # via
     #   agentic
     #   pydantic-ai-slim
@@ -85,9 +85,9 @@ genai-prices==0.0.55
     # via pydantic-ai-slim
 google-api-core==2.30.0
     # via a2a-sdk
-google-auth==2.48.0
+google-auth==2.49.0
     # via google-api-core
-googleapis-common-protos==1.72.0
+googleapis-common-protos==1.73.0
     # via google-api-core
 griffelib==2.0.0
     # via pydantic-ai-slim
@@ -121,7 +121,7 @@ importlib-metadata==8.7.1
     # via opentelemetry-api
 jaraco-classes==3.4.0
     # via keyring
-jaraco-context==6.1.0
+jaraco-context==6.1.1
     # via keyring
 jaraco-functools==4.4.0
     # via keyring
@@ -135,13 +135,13 @@ jsonref==1.1.0
     # via fastmcp
 jsonschema==4.26.0
     # via mcp
-jsonschema-path==0.4.4
+jsonschema-path==0.4.5
     # via fastmcp
 jsonschema-specifications==2025.9.1
     # via jsonschema
 keyring==25.7.0
     # via py-key-value-aio
-logfire-api==4.25.0
+logfire-api==4.27.0
     # via pydantic-graph
 markdown-it-py==4.0.0
     # via rich
@@ -156,13 +156,13 @@ more-itertools==10.8.0
     # via
     #   jaraco-classes
     #   jaraco-functools
-openai==2.24.0
+openai==2.26.0
     # via
     #   agentic
     #   pydantic-ai-slim
 openapi-pydantic==0.5.1
     # via fastmcp
-opentelemetry-api==1.39.1
+opentelemetry-api==1.40.0
     # via
     #   a2a-sdk
     #   agentic
@@ -171,17 +171,17 @@ opentelemetry-api==1.39.1
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   pydantic-ai-slim
-opentelemetry-sdk==1.39.1
+opentelemetry-sdk==1.40.0
     # via
     #   a2a-sdk
     #   agentic
-opentelemetry-semantic-conventions==0.60b1
+opentelemetry-semantic-conventions==0.61b0
     # via opentelemetry-sdk
 packaging==26.0
     # via fastmcp
 pathable==0.5.0
     # via jsonschema-path
-platformdirs==4.9.2
+platformdirs==4.9.4
     # via fastmcp
 prompt-toolkit==3.0.52
     # via pydantic-ai-slim
@@ -217,11 +217,11 @@ pydantic==2.12.5
     #   pydantic-ai-slim
     #   pydantic-graph
     #   pydantic-settings
-pydantic-ai-slim==1.64.0
+pydantic-ai-slim @ git+https://github.com/pydantic/pydantic-ai.git@1d8b6c82d02e30959d6b94e635fc01225128f591#subdirectory=pydantic_ai_slim
     # via agentic
 pydantic-core==2.41.5
     # via pydantic
-pydantic-graph==1.64.0
+pydantic-graph @ git+https://github.com/pydantic/pydantic-ai.git@1d8b6c82d02e30959d6b94e635fc01225128f591#subdirectory=pydantic_graph
     # via pydantic-ai-slim
 pydantic-settings==2.13.1
     # via mcp
@@ -321,6 +321,8 @@ typing-inspection==0.4.2
     #   pydantic-ai-slim
     #   pydantic-graph
     #   pydantic-settings
+uncalled-for==0.2.0
+    # via fastmcp
 urllib3==2.6.3
     # via requests
 uvicorn==0.41.0
