@@ -20,7 +20,10 @@
       "Bash(git log:*)",
       "Bash(python3:*)",
       "Bash(uv pip show:*)",
-      "Bash(python -c *)"
+      "Bash(python -c *)",
+      "WebFetch(domain:pydantic.dev)",
+      "WebFetch(domain:ai.pydantic.dev)",
+      "Bash(make check *)"
     ]
   }
 }

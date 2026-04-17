@@ -1,0 +1,21 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="Simple Agent"
+LABEL org.opencontainers.image.description="A config-driven general-purpose AI agent."
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+# Install default config files — overridden at runtime by mounting a ConfigMap at /etc/agent/
+RUN mkdir -p /etc/agent
+COPY agent.yml a2a.yml system_prompt.md /etc/agent/
+RUN chown -R appuser:appuser /etc/agent
+
+COPY agent.py ./
+RUN chmod +x agent.py
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port 8000 for HTTP agent endpoints
+EXPOSE 8000
+
+ENTRYPOINT ["/app/agent.py"]
+CMD ["serve"]

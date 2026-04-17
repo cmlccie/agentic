@@ -1,0 +1,16 @@
+# Model behavior settings
+model_settings:
+  temperature: 0.2  # 0.0 = deterministic, 1.0 = creative
+
+# MCP tool servers — values support ${ENV_VAR} expansion (expanded before parsing)
+# capabilities:
+#   - MCP:
+#       url: http://some-mcp-server:8000/mcp
+#   - MCP:
+#       url: https://api.example.com/mcp
+#       authorization_token: "${MY_SECRET_TOKEN}"
+#   - MCP:
+#       url: https://api.example.com/mcp
+#       headers:
+#         Authorization: "Bearer ${MY_SECRET_TOKEN}"
+#         X-Custom-Header: value

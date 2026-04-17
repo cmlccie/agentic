@@ -1,0 +1,17 @@
+name: Simple Agent
+description: A general-purpose AI assistant.
+
+skills:
+  - id: general-assistant
+    name: General Assistant
+    description: Answer questions and assist with general tasks.
+    tags:
+      - general
+      - assistant
+    examples:
+      - What is the capital of France?
+      - Summarize this text for me.
+    input_modes:
+      - text/plain
+    output_modes:
+      - text/plain

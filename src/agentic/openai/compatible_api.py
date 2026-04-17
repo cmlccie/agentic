@@ -129,8 +129,8 @@ class OpenAICompatibleAPI:
     def _register_routes(self) -> None:
         """Register API routes on the FastAPI application."""
 
-        @self.app.get("/", tags=["Service Endpoints"])
-        async def root() -> dict[str, str]:
+        @self.app.get("/status", tags=["Service Endpoints"])
+        async def status() -> dict[str, str]:
             return {"message": f"{self.app.title} is running"}
 
         @self.app.get("/health", tags=["Service Endpoints"])
