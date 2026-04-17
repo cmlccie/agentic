@@ -4,7 +4,7 @@
 import logging
 import os
 from datetime import datetime
-from typing import Annotated, Any, Dict, Hashable, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from zoneinfo import ZoneInfo
 
 import requests
@@ -90,7 +90,7 @@ class WeatherForecast(BaseModel):
     daily_units: Dict[str, str] = Field(
         ..., description="Units for daily weather variables."
     )
-    daily: Dict[Hashable, Dict[Hashable, Any]] = Field(
+    daily: Dict[str, Dict[str, Any]] = Field(
         ..., description="Daily weather variables."
     )
 
