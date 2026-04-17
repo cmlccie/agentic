@@ -23,6 +23,7 @@ make clean          # Remove __pycache__, .egg-info, dist/, build/, etc.
 Run scripts with `uv run <path-to-script>`. No tests are currently configured.
 
 Build container images (requires docker or podman):
+
 ```bash
 make python-base-image
 make agents-weather-agent
@@ -31,7 +32,7 @@ make tools-mcp-weather-server
 
 ## Architecture
 
-```
+```text
 src/agentic/          Shared installable package (logging, OpenAI-compatible API wrapper)
 agents/               AI agent implementations (weather_agent, provisioning_agent)
 tools/mcp/            MCP tool servers that agents consume (weather_server, provisioning_server)
@@ -41,6 +42,7 @@ images/python/        Base container image definition
 ### Agent Pattern
 
 Each agent follows a consistent structure:
+
 1. Load config from environment variables (`OPENAI_BASE_URL`, `OPENAI_API_KEY`, `MODEL_NAME`, tool server URL).
 2. Load a system prompt from a colocated `system_prompt.md` file.
 3. Connect to MCP tool servers via `MCPServerStreamableHTTP`.
@@ -53,7 +55,7 @@ Each agent follows a consistent structure:
 
 ### MCP Tool Server Pattern
 
-Each tool server uses `mcp.server.fastmcp.FastMCP` and exposes `@mcp.tool()`, `@mcp.resource()`, and `@mcp.prompt()` decorated functions. Servers support `stdio` and `streamable-http` transport modes.
+Each tool server uses `fastmcp.FastMCP` via `from fastmcp import FastMCP` and exposes `@mcp.tool()`, `@mcp.resource()`, and `@mcp.prompt()` decorated functions. Servers support `stdio` and `http` transport modes. For HTTP mode, bind settings are passed to `mcp.run(transport="http", host=HOST, port=PORT)` rather than stored on the server instance.
 
 ### OpenAI-Compatible API (`agentic.openai.compatible_api`)
 

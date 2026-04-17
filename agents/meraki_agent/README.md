@@ -21,7 +21,7 @@ docker run -d \
   -e OPENAI_API_KEY="your-openai-api-key" \
   -e OPENAI_BASE_URL="your-openai-base-url" \
   -e MODEL_NAME="your-model-name" \
-  -e TOOLS_MCP_MERAKI_SERVER_URL="http://meraki-server:8000" \
+  -e TOOLS_MCP_MERAKI_SERVER_URL="http://meraki-server:8000/mcp" \
   ghcr.io/cmlccie/agents-meraki-agent:latest
 ```
 
@@ -35,19 +35,15 @@ docker run -d \
 
 ### Required Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `OPENAI_API_KEY` | Your OpenAI API key |
-| `OPENAI_BASE_URL` | OpenAI API base URL |
-| `MODEL_NAME` | Model name to use (e.g., `gpt-4`) |
-| `TOOLS_MCP_MERAKI_SERVER_URL` | URL of the MCP Meraki server |
+- `OPENAI_API_KEY`: Your OpenAI API key
+- `OPENAI_BASE_URL`: OpenAI API base URL
+- `MODEL_NAME`: Model name to use, for example `gpt-4`
+- `TOOLS_MCP_MERAKI_SERVER_URL`: URL of the MCP Meraki server
 
 ### Optional Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HOST` | `0.0.0.0` | Host to bind the API server |
-| `PORT` | `8000` | Port to expose the API server |
+- `HOST`: `0.0.0.0` by default. Host to bind the API server.
+- `PORT`: `8000` by default. Port to expose the API server.
 
 ## Usage
 
@@ -61,7 +57,7 @@ docker run -d \
   -e OPENAI_API_KEY="your-openai-api-key" \
   -e OPENAI_BASE_URL="your-openai-base-url" \
   -e MODEL_NAME="your-model-name" \
-  -e TOOLS_MCP_MERAKI_SERVER_URL="http://meraki-server:8000" \
+  -e TOOLS_MCP_MERAKI_SERVER_URL="http://meraki-server:8000/mcp" \
   --name meraki-agent \
   ghcr.io/cmlccie/agents-meraki-agent:latest
 ```
@@ -115,7 +111,7 @@ docker run -it --rm \
   -e OPENAI_API_KEY="your-openai-api-key" \
   -e OPENAI_BASE_URL="your-openai-base-url" \
   -e MODEL_NAME="your-model-name" \
-  -e TOOLS_MCP_MERAKI_SERVER_URL="http://meraki-server:8000" \
+  -e TOOLS_MCP_MERAKI_SERVER_URL="http://meraki-server:8000/mcp" \
   ghcr.io/cmlccie/agents-meraki-agent:latest \
   cli
 ```

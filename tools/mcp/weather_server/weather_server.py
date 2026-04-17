@@ -4,12 +4,12 @@
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, Hashable, List, Literal, Optional
+from typing import Annotated, Any, Dict, Hashable, List, Literal, Optional
 from zoneinfo import ZoneInfo
 
 import requests
 import typer
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 import agentic.logging
@@ -31,7 +31,7 @@ location_cache: dict[int, "LocationInfo"] = {}
 # -------------------------------------------------------------------------------------------------
 
 
-mcp = FastMCP("MCP Weather Server", host=HOST, port=PORT)
+mcp = FastMCP("MCP Weather Server")
 
 
 # --------------------------------------------------------------------------------------
@@ -321,11 +321,21 @@ def get_weather_prompt(location: str, timeframe: str) -> str:
 
 
 def main(
-    transport: Literal["stdio", "streamable-http"] = typer.Argument(default="stdio"),
-):
+    transport: Annotated[Literal["stdio", "http"], typer.Argument()] = "stdio",
+) -> None:
     """Model Context Protocol (MCP) Weather Server."""
     logger.info(f"Starting {transport} MCP Weather Server")
-    mcp.run(transport=transport)
+
+    match transport:
+        case "stdio":
+            mcp.run(transport=transport)
+        case "http":
+            mcp.run(transport=transport, host=HOST, port=PORT)
+        case _:
+            raise typer.BadParameter(
+                "Transport must be one of: stdio, http.",
+                param_hint="transport",
+            )
 
 
 if __name__ == "__main__":

@@ -3,10 +3,10 @@
 
 import logging
 import os
-from typing import Literal
+from typing import Annotated, Literal
 
 import typer
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 import agentic.logging
@@ -23,7 +23,7 @@ PORT = int(os.environ.get("PORT", "8000"))
 # MCP Provisioning Server
 # -------------------------------------------------------------------------------------------------
 
-mcp = FastMCP("MCP Provisioning", host=HOST, port=PORT)
+mcp = FastMCP("MCP Provisioning")
 
 
 # --------------------------------------------------------------------------------------
@@ -139,11 +139,21 @@ def provision_vlan(vlan_id: int, name: str, ipv4_cidr: str) -> VLAN:
 
 
 def main(
-    transport: Literal["stdio", "streamable-http"] = typer.Argument(default="stdio"),
-):
+    transport: Annotated[Literal["stdio", "http"], typer.Argument()] = "stdio",
+) -> None:
     """Model Context Protocol (MCP) Provisioning Server."""
     logger.info(f"Starting {transport} MCP Provisioning Server")
-    mcp.run(transport=transport)
+
+    match transport:
+        case "stdio":
+            mcp.run(transport=transport)
+        case "http":
+            mcp.run(transport=transport, host=HOST, port=PORT)
+        case _:
+            raise typer.BadParameter(
+                "Transport must be one of: stdio, http.",
+                param_hint="transport",
+            )
 
 
 if __name__ == "__main__":

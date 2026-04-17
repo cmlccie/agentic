@@ -22,7 +22,7 @@ docker run -d \
   -e OPENAI_API_KEY="your-openai-api-key" \
   -e OPENAI_BASE_URL="your-openai-base-url" \
   -e MODEL_NAME="your-model-name" \
-  -e TOOLS_MCP_PROVISIONING_SERVER_URL="http://localhost:8001" \
+  -e TOOLS_MCP_PROVISIONING_SERVER_URL="http://localhost:8001/mcp" \
   ghcr.io/cmlccie/agents-provisioning-agent:latest
 ```
 
@@ -36,19 +36,15 @@ docker run -d \
 
 ### Required Environment Variables
 
-| Variable                            | Description                        |
-| ----------------------------------- | ---------------------------------- |
-| `OPENAI_API_KEY`                    | Your OpenAI API key                |
-| `OPENAI_BASE_URL`                   | OpenAI API base URL                |
-| `MODEL_NAME`                        | Model name to use (e.g., `gpt-4`)  |
-| `TOOLS_MCP_PROVISIONING_SERVER_URL` | URL of the MCP provisioning server |
+- `OPENAI_API_KEY`: Your OpenAI API key
+- `OPENAI_BASE_URL`: OpenAI API base URL
+- `MODEL_NAME`: Model name to use (e.g., `gpt-4`)
+- `TOOLS_MCP_PROVISIONING_SERVER_URL`: URL of the MCP provisioning server
 
 ### Optional Environment Variables
 
-| Variable   | Default   | Description                   |
-| ---------- | --------- | ----------------------------- |
-| `API_HOST` | `0.0.0.0` | Host to bind the API server   |
-| `API_PORT` | `8000`    | Port to expose the API server |
+- `API_HOST`: `0.0.0.0` by default. Host to bind the API server.
+- `API_PORT`: `8000` by default. Port to expose the API server.
 
 ## Usage
 
@@ -62,7 +58,7 @@ docker run -d \
   -e OPENAI_API_KEY="your-openai-api-key" \
   -e OPENAI_BASE_URL="your-openai-base-url" \
   -e MODEL_NAME="your-model-name" \
-  -e TOOLS_MCP_PROVISIONING_SERVER_URL="http://localhost:8001" \
+  -e TOOLS_MCP_PROVISIONING_SERVER_URL="http://localhost:8001/mcp" \
   --name provisioning-agent \
   ghcr.io/cmlccie/agents-provisioning-agent:latest
 ```
@@ -146,7 +142,7 @@ docker run -it --rm \
   -e OPENAI_API_KEY="your-openai-api-key" \
   -e OPENAI_BASE_URL="your-openai-base-url" \
   -e MODEL_NAME="your-model-name" \
-  -e TOOLS_MCP_PROVISIONING_SERVER_URL="http://localhost:8001" \
+  -e TOOLS_MCP_PROVISIONING_SERVER_URL="http://localhost:8001/mcp" \
   ghcr.io/cmlccie/agents-provisioning-agent:latest \
   cli
 ```

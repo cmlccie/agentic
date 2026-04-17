@@ -4,13 +4,10 @@ A Model Context Protocol (MCP) server that wraps Cisco Meraki Dashboard API v1 e
 
 ## Tools
 
-| Tool | Description |
-|------|-------------|
-| `search_clients` | Search for clients on the network |
-| `get_client_details` | Get detailed info for a specific client |
-| `get_client_health_scores` | Get wireless health scores (0-100) |
-| `get_client_connection_stats` | Get connection flow statistics (assoc/auth/DHCP/DNS/success) |
-| `get_client_connectivity_events` | Get connectivity event timeline with severity filtering |
+- `list_clients`: List clients on the network
+- `get_client_details`: Get detailed info for a specific client
+- `get_client_connection_stats`: Get connection flow statistics (assoc/auth/DHCP/DNS/success)
+- `get_client_connectivity_events`: Get connectivity event timeline with severity filtering
 
 ## Container Image
 
@@ -18,9 +15,9 @@ This project is automatically built and published as a multi-architecture contai
 
 ### Available Images
 
-- `ghcr.io/cmlccie/agentic/tools-mcp-meraki-server:latest` - Latest version from main branch
-- `ghcr.io/cmlccie/agentic/tools-mcp-meraki-server:main` - Main branch builds
-- `ghcr.io/cmlccie/agentic/tools-mcp-meraki-server:v*` - Tagged releases
+- `ghcr.io/cmlccie/agentic/tools-mcp-meraki-server:latest`: Latest version from main branch
+- `ghcr.io/cmlccie/agentic/tools-mcp-meraki-server:main`: Main branch builds
+- `ghcr.io/cmlccie/agentic/tools-mcp-meraki-server:v*`: Tagged releases
 
 ### Use
 
@@ -35,24 +32,22 @@ docker run --rm \
 docker run --rm -p 8000:8000 \
   -e MERAKI_API_KEY="your-api-key" \
   -e MERAKI_NETWORK_ID="your-network-id" \
-  ghcr.io/cmlccie/agentic/tools-mcp-meraki-server:latest streamable-http
+  ghcr.io/cmlccie/agentic/tools-mcp-meraki-server:latest http
 ```
+
+The HTTP MCP endpoint is exposed at `/mcp`.
 
 ## Configuration
 
 ### Required Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `MERAKI_API_KEY` | Meraki Dashboard API key |
-| `MERAKI_NETWORK_ID` | Target network ID |
+- `MERAKI_API_KEY`: Meraki Dashboard API key
+- `MERAKI_NETWORK_ID`: Target network ID
 
 ### Optional Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HOST` | `0.0.0.0` | Server bind host |
-| `PORT` | `8000` | Server bind port |
+- `HOST`: `0.0.0.0` by default. HTTP server bind host.
+- `PORT`: `8000` by default. HTTP server bind port.
 
 ## Build Locally
 

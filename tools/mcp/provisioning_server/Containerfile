@@ -10,7 +10,7 @@ RUN chmod +x provisioning_server.py
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# Expose port 8000 for HTTP transport (when using streamable-http mode)
+# Expose port 8000 for HTTP transport
 EXPOSE 8000
 
 ENTRYPOINT ["/app/provisioning_server.py"]

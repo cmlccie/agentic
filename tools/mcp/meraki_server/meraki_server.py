@@ -3,11 +3,11 @@
 
 import logging
 import os
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import requests
 import typer
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 import agentic.logging
@@ -36,7 +36,7 @@ PORT = int(os.environ.get("PORT", "8000"))
 # MCP Meraki Server
 # -------------------------------------------------------------------------------------------------
 
-mcp = FastMCP("MCP Meraki", host=HOST, port=PORT)
+mcp = FastMCP("MCP Meraki")
 
 
 # -------------------------------------------------------------------------------------------------
@@ -305,11 +305,21 @@ def get_client_connectivity_events(
 
 
 def main(
-    transport: Literal["stdio", "streamable-http"] = typer.Argument(default="stdio"),
-):
+    transport: Annotated[Literal["stdio", "http"], typer.Argument()] = "stdio",
+) -> None:
     """Model Context Protocol (MCP) Meraki Server."""
     logger.info(f"Starting {transport} MCP Meraki Server")
-    mcp.run(transport=transport)
+
+    match transport:
+        case "stdio":
+            mcp.run(transport=transport)
+        case "http":
+            mcp.run(transport=transport, host=HOST, port=PORT)
+        case _:
+            raise typer.BadParameter(
+                "Transport must be one of: stdio, http.",
+                param_hint="transport",
+            )
 
 
 if __name__ == "__main__":
