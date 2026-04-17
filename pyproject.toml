@@ -28,6 +28,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ipython>=9.5.0",
+    "pytest>=9.0.3",
     "ruff>=0.14.1",
 ]
 
@@ -52,6 +53,9 @@ packages = ["src/agentic"]
 [tool.uv.sources]
 # pydantic-ai-slim = { git = "https://github.com/pydantic/pydantic-ai.git", branch = "parallel-mcps", subdirectory = "pydantic_ai_slim" }
 # pydantic-graph = { git = "https://github.com/pydantic/pydantic-ai.git", branch = "parallel-mcps", subdirectory = "pydantic_graph" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 88

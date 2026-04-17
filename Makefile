@@ -13,7 +13,7 @@ endif
 # Repository Targets
 # --------------------------------------------------------------------------------------
 
-.PHONY: help setup upgrade clean lint format check
+.PHONY: help setup upgrade clean lint format check test
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -50,6 +50,9 @@ format: ## Format code automatically
 
 check: lint ## Run all checks (lint + format check)
 	uv run ruff format --check .
+
+test: ## Run tests
+	uv run pytest
 
 # -------------------------------------------------------------------------------------------------
 # Build Targets

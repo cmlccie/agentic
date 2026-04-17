@@ -21,8 +21,13 @@ import time
 from typing import Any, AsyncGenerator, Literal, Optional
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
+from openai.types import CompletionUsage
+from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessage
+from openai.types.chat.chat_completion import Choice
+from openai.types.chat.chat_completion_chunk import Choice as ChunkChoice
+from openai.types.chat.chat_completion_chunk import ChoiceDelta
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
@@ -38,21 +43,18 @@ logger = logging.getLogger(__name__)
 
 
 # -------------------------------------------------------------------------------------------------
-# OpenAI Compatible Data Models
+# Request Models
 # -------------------------------------------------------------------------------------------------
 
 
 class Message(BaseModel):
-    """Chat message in OpenAI format."""
+    """Chat message in OpenAI request format."""
 
     role: Literal["system", "user", "assistant"]
     content: str
 
     def to_model_message(self) -> ModelMessage:
         """Convert to Pydantic AI ModelMessage.
-
-        Returns:
-            ModelMessage: The converted Pydantic AI message.
 
         Raises:
             ValueError: If the role is unknown.
@@ -78,51 +80,6 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = Field(default=None, ge=1)
 
 
-class ChatCompletionChoice(BaseModel):
-    """A single chat completion choice."""
-
-    index: int
-    message: Message
-    finish_reason: str
-
-
-class Usage(BaseModel):
-    """Token usage information."""
-
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
-class ChatCompletionResponse(BaseModel):
-    """OpenAI-compatible chat completion response."""
-
-    id: str
-    object: str = "chat.completion"
-    created: int
-    model: str
-    choices: list[ChatCompletionChoice]
-    usage: Usage
-
-
-class ChatCompletionStreamChoice(BaseModel):
-    """A single streaming chat completion choice."""
-
-    index: int
-    delta: dict[str, str]
-    finish_reason: Optional[str] = None
-
-
-class ChatCompletionStreamResponse(BaseModel):
-    """OpenAI-compatible streaming chat completion response."""
-
-    id: str
-    object: str = "chat.completion.chunk"
-    created: int
-    model: str
-    choices: list[ChatCompletionStreamChoice]
-
-
 # -------------------------------------------------------------------------------------------------
 # OpenAI Compatible API
 # -------------------------------------------------------------------------------------------------
@@ -131,9 +88,9 @@ class ChatCompletionStreamResponse(BaseModel):
 class OpenAICompatibleAPI:
     """OpenAI-compatible REST API wrapper for Pydantic AI agents.
 
-    This class wraps a Pydantic AI agent and exposes it via OpenAI-compatible
-    REST API endpoints using FastAPI. It supports both streaming and non-streaming
-    chat completion requests.
+    Wraps a Pydantic AI agent and exposes it via OpenAI-compatible REST API
+    endpoints using FastAPI. Supports both streaming and non-streaming chat
+    completion requests.
 
     Attributes:
         agent: The Pydantic AI agent to wrap.
@@ -174,12 +131,10 @@ class OpenAICompatibleAPI:
 
         @self.app.get("/", tags=["Service Endpoints"])
         async def root() -> dict[str, str]:
-            """Root endpoint."""
             return {"message": f"{self.app.title} is running"}
 
         @self.app.get("/health", tags=["Service Endpoints"])
         async def health() -> dict[str, str]:
-            """Health check endpoint."""
             return {"status": "healthy"}
 
         @self.app.post(
@@ -189,36 +144,19 @@ class OpenAICompatibleAPI:
         )
         async def chat_completions(
             request: ChatCompletionRequest,
-        ) -> ChatCompletionResponse | StreamingResponse:
-            """OpenAI-compatible chat completions endpoint.
-
-            Supports both streaming and non-streaming responses.
-
-            Args:
-                request: The chat completion request.
-
-            Returns:
-                ChatCompletionResponse for non-streaming requests, or
-                StreamingResponse for streaming requests.
-            """
+        ) -> ChatCompletion | StreamingResponse:
             return await self._handle_chat_completions(request)
 
     async def _handle_chat_completions(
         self, request: ChatCompletionRequest
-    ) -> ChatCompletionResponse | StreamingResponse:
+    ) -> ChatCompletion | StreamingResponse:
         """Handle chat completion requests.
-
-        Args:
-            request: The chat completion request.
-
-        Returns:
-            ChatCompletionResponse for non-streaming requests, or
-            StreamingResponse for streaming requests.
 
         Raises:
             AssertionError: If no messages are provided in the request.
         """
-        assert request.messages, "Messages are required"
+        if not request.messages:
+            raise HTTPException(status_code=422, detail="Messages are required")
 
         completion_id = f"chatcmpl-{int(time.time() * 1000)}"
         created = int(time.time())
@@ -234,7 +172,6 @@ class OpenAICompatibleAPI:
                 },
             )
 
-        # Non-streaming response
         user_message = request.messages[-1].content
         message_history = (
             [msg.to_model_message() for msg in request.messages[:-1]]
@@ -245,18 +182,26 @@ class OpenAICompatibleAPI:
         result = await self.agent.run(user_message, message_history=message_history)
         usage_info = result.usage()
 
-        return ChatCompletionResponse(
+        return ChatCompletion(
             id=completion_id,
             created=created,
             model=request.model or self.model_name,
+            object="chat.completion",
             choices=[
-                ChatCompletionChoice(
+                Choice(
                     index=0,
-                    message=Message(role="assistant", content=result.output),
+                    message=ChatCompletionMessage(
+                        role="assistant",
+                        content=result.output,
+                        refusal=None,
+                    ),
                     finish_reason="stop",
+                    logprobs=None,
                 )
             ],
-            usage=Usage(
+            service_tier=None,
+            system_fingerprint=None,
+            usage=CompletionUsage(
                 prompt_tokens=usage_info.input_tokens or 0,
                 completion_tokens=usage_info.output_tokens or 0,
                 total_tokens=usage_info.total_tokens or 0,
@@ -269,81 +214,90 @@ class OpenAICompatibleAPI:
         completion_id: str,
         created: int,
     ) -> AsyncGenerator[str, None]:
-        """Generate streaming responses in OpenAI format.
-
-        Args:
-            request: The chat completion request.
-            completion_id: Unique identifier for the completion.
-            created: Unix timestamp of when the completion was created.
+        """Generate streaming responses in OpenAI SSE format.
 
         Yields:
             Server-sent event formatted strings containing response chunks.
         """
         user_message = request.messages[-1].content if request.messages else ""
-
         message_history = (
             [msg.to_model_message() for msg in request.messages[:-1]]
             if len(request.messages) > 1
             else None
         )
 
+        model = request.model or self.model_name
         first_chunk = True
+
         async with self.agent.run_stream(
             user_message, message_history=message_history
         ) as result:
             async for message_chunk in result.stream_text(delta=True):
                 if first_chunk:
-                    chunk = ChatCompletionStreamResponse(
+                    chunk = ChatCompletionChunk(
                         id=completion_id,
                         created=created,
-                        model=request.model or self.model_name,
+                        model=model,
+                        object="chat.completion.chunk",
                         choices=[
-                            ChatCompletionStreamChoice(
+                            ChunkChoice(
                                 index=0,
-                                delta={"role": "assistant", "content": message_chunk},
+                                delta=ChoiceDelta(
+                                    role="assistant",
+                                    content=message_chunk,
+                                    refusal=None,
+                                ),
                                 finish_reason=None,
+                                logprobs=None,
                             )
                         ],
+                        service_tier=None,
+                        system_fingerprint=None,
                     )
                     first_chunk = False
                 else:
-                    chunk = ChatCompletionStreamResponse(
+                    chunk = ChatCompletionChunk(
                         id=completion_id,
                         created=created,
-                        model=request.model or self.model_name,
+                        model=model,
+                        object="chat.completion.chunk",
                         choices=[
-                            ChatCompletionStreamChoice(
+                            ChunkChoice(
                                 index=0,
-                                delta={"content": message_chunk},
+                                delta=ChoiceDelta(
+                                    content=message_chunk,
+                                    refusal=None,
+                                ),
                                 finish_reason=None,
+                                logprobs=None,
                             )
                         ],
+                        service_tier=None,
+                        system_fingerprint=None,
                     )
 
                 yield f"data: {chunk.model_dump_json()}\n\n"
 
-        # Send final chunk with finish_reason
-        final_chunk = ChatCompletionStreamResponse(
+        final_chunk = ChatCompletionChunk(
             id=completion_id,
             created=created,
-            model=request.model or self.model_name,
+            model=model,
+            object="chat.completion.chunk",
             choices=[
-                ChatCompletionStreamChoice(
+                ChunkChoice(
                     index=0,
-                    delta={},
+                    delta=ChoiceDelta(content=None, refusal=None),
                     finish_reason="stop",
+                    logprobs=None,
                 )
             ],
+            service_tier=None,
+            system_fingerprint=None,
         )
         yield f"data: {final_chunk.model_dump_json()}\n\n"
         yield "data: [DONE]\n\n"
 
     def run(self, host: str = "0.0.0.0", port: int = 8000) -> None:
-        """Run the FastAPI server.
-
-        Args:
-            host: The host address to bind to.
-            port: The port to listen on.
-        """
+        """Run the FastAPI server."""
         logger.info(f"Starting {self.app.title} on {host}:{port}")
         uvicorn.run(self.app, host=host, port=port)
