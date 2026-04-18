@@ -143,11 +143,13 @@ class OpenAICompatibleAPI:
 
         @self.app.get("/v1/models", tags=["OpenAI Compatible"])
         async def list_models() -> dict[str, Any]:
+            agent_name = self.agent.name if self.agent.name else "Simple Agent"
+
             return {
                 "object": "list",
                 "data": [
                     {
-                        "id": self.model_name,
+                        "id": agent_name,
                         "object": "model",
                         "created": 0,
                         "owned_by": "user",
