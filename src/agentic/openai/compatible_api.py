@@ -18,6 +18,7 @@ Example:
 
 import logging
 import time
+from collections.abc import Callable
 from typing import Any, AsyncGenerator, Literal, Optional
 
 import uvicorn
@@ -105,6 +106,7 @@ class OpenAICompatibleAPI:
         description: str = "OpenAI-compatible API for a Pydantic AI agent.",
         version: str = "0.1.0",
         model_name: str = "default",
+        lifespan: Optional[Callable[..., Any]] = None,
     ) -> None:
         """Initialize the OpenAI-compatible API wrapper.
 
@@ -114,6 +116,7 @@ class OpenAICompatibleAPI:
             description: The description for the FastAPI application.
             version: The version string for the FastAPI application.
             model_name: The model name to report in API responses.
+            lifespan: Optional FastAPI lifespan context manager for startup/shutdown.
         """
         self.agent = agent
         self.model_name = model_name
@@ -122,6 +125,7 @@ class OpenAICompatibleAPI:
             title=title,
             description=description,
             version=version,
+            lifespan=lifespan,
         )
 
         self._register_routes()
@@ -136,6 +140,20 @@ class OpenAICompatibleAPI:
         @self.app.get("/health", tags=["Service Endpoints"])
         async def health() -> dict[str, str]:
             return {"status": "healthy"}
+
+        @self.app.get("/v1/models", tags=["OpenAI Compatible"])
+        async def list_models() -> dict[str, Any]:
+            return {
+                "object": "list",
+                "data": [
+                    {
+                        "id": self.model_name,
+                        "object": "model",
+                        "created": 0,
+                        "owned_by": "user",
+                    }
+                ],
+            }
 
         @self.app.post(
             "/v1/chat/completions",

@@ -2,6 +2,7 @@
 """Simple Agent — a config-driven Pydantic AI agent."""
 
 import os
+from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
@@ -119,19 +120,25 @@ def serve(agent_url: str, host: str | None = None, port: int | None = None):
     host = host or os.environ.get("HOST", "0.0.0.0")
     port = port or int(os.environ.get("PORT", 8000))
 
-    openai_api = OpenAICompatibleAPI(
-        agent=agent,
-        title=f"{a2a_config.name} OpenAI Compatible API",
-        description=f"OpenAI-compatible API for the {a2a_config.name}.",
-        model_name=MODEL_NAME,
-    )
-
     a2a_asgi = agent.to_a2a(
         name=a2a_config.name,
         description=a2a_config.description,
         url=agent_url,
         skills=agent_skills,
         debug=True,
+    )
+
+    @asynccontextmanager
+    async def lifespan(app):
+        async with a2a_asgi.task_manager:
+            yield
+
+    openai_api = OpenAICompatibleAPI(
+        agent=agent,
+        title=f"{a2a_config.name} OpenAI Compatible API",
+        description=f"OpenAI-compatible API for the {a2a_config.name}.",
+        model_name=MODEL_NAME,
+        lifespan=lifespan,
     )
 
     # OpenAI routes (/status, /health, /v1/…) match first; A2A catches the rest
