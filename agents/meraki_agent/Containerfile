@@ -2,7 +2,7 @@ FROM ghcr.io/cmlccie/agentic/python:latest
 
 LABEL org.opencontainers.image.title="Meraki Agent"
 LABEL org.opencontainers.image.description="A Pydantic AI agent that troubleshoots Meraki wireless client connectivity."
-LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/agents/meraki_agent/README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
 COPY meraki_agent.py system_prompt.md README.md ./

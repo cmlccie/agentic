@@ -2,7 +2,7 @@ FROM ghcr.io/cmlccie/agentic/python:latest
 
 LABEL org.opencontainers.image.title="ThousandEyes Agent"
 LABEL org.opencontainers.image.description="A Pydantic AI agent that troubleshoots application connectivity using ThousandEyes."
-LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/agents/thousandeyes_agent/README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
 COPY thousandeyes_agent.py system_prompt.md README.md ./

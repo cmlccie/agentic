@@ -2,6 +2,7 @@ FROM ghcr.io/cmlccie/agentic/python:latest
 
 LABEL org.opencontainers.image.title="Network Troubleshooting Agent"
 LABEL org.opencontainers.image.description="A supervisor agent that coordinates Meraki and ThousandEyes agents for network troubleshooting."
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
 COPY network_agent.py system_prompt.md ./

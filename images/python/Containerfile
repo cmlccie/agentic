@@ -2,7 +2,7 @@ FROM python:3.13-alpine
 
 LABEL org.opencontainers.image.title="Agentic Python Base Image"
 LABEL org.opencontainers.image.description="A base image for Agentic Python applications."
-LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
 # --------------------------------------------------------------------------------------

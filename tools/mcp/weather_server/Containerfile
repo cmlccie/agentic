@@ -2,7 +2,7 @@ FROM ghcr.io/cmlccie/agentic/python:latest
 
 LABEL org.opencontainers.image.title="MCP Weather Server"
 LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) server that provides weather information."
-LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/tools/mcp/weather_server/README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
 COPY weather_server.py README.md ./

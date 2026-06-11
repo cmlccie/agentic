@@ -2,7 +2,7 @@ FROM ghcr.io/cmlccie/agentic/python:latest
 
 LABEL org.opencontainers.image.title="Provisioning Agent"
 LABEL org.opencontainers.image.description="A Pydantic AI agent that provisions IT infrastructure."
-LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/agents/provisioning_agent/README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
 COPY provisioning_agent.py system_prompt.md README.md ./

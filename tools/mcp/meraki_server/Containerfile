@@ -2,7 +2,7 @@ FROM ghcr.io/cmlccie/agentic/python:latest
 
 LABEL org.opencontainers.image.title="MCP Meraki Server"
 LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) server that wraps Cisco Meraki Dashboard API v1 endpoints."
-LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/tools/mcp/meraki_server/README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
 COPY meraki_server.py README.md ./
