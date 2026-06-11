@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic_ai import Agent
 
+from .config import CONFIG_DIR, SECRETS_DIR
 from .config.agent_spec import load_agent
 from .config.server_spec import AgentSecrets, ServerSpec, load_server_spec
 from .reload import (
@@ -20,9 +21,6 @@ from .reload import (
 )
 
 log = logging.getLogger(__name__)
-
-_CONFIG_DIR = Path("/etc/agent/config")
-_SECRETS_DIR = Path("/etc/agent/secrets")
 
 
 @dataclass
@@ -40,8 +38,8 @@ class AppState:
     secrets: AgentSecrets
     agent: Agent
     server_spec: ServerSpec
-    config_dir: Path = field(default=_CONFIG_DIR)
-    secrets_dir: Path = field(default=_SECRETS_DIR)
+    config_dir: Path = field(default=CONFIG_DIR)
+    secrets_dir: Path = field(default=SECRETS_DIR)
     a2a_app: Any = field(default=None)
 
 

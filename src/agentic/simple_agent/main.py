@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette import status
 
+from .config import CONFIG_DIR, SECRETS_DIR
 from .config.agent_spec import load_agent
 from .config.server_spec import AgentSecrets, load_server_spec
 from .health import router as health_router
@@ -18,13 +19,10 @@ from .reload import ReloadCoordinator
 
 log = logging.getLogger(__name__)
 
-_CONFIG_DIR = Path("/etc/agent/config")
-_SECRETS_DIR = Path("/etc/agent/secrets")
-
 
 def create_app(
-    config_dir: Path = _CONFIG_DIR,
-    secrets_dir: Path = _SECRETS_DIR,
+    config_dir: Path = CONFIG_DIR,
+    secrets_dir: Path = SECRETS_DIR,
     agent_url: str = "http://localhost:8000",
 ) -> FastAPI:
     """Create and configure the FastAPI application.

@@ -10,18 +10,17 @@ import uvicorn
 
 from agentic import logging as agentic_logging
 
-app = typer.Typer(no_args_is_help=True, help="Simple Agent")
+from .config import CONFIG_DIR, SECRETS_DIR
 
-_CONFIG_DIR = Path("/etc/agent/config")
-_SECRETS_DIR = Path("/etc/agent/secrets")
+app = typer.Typer(no_args_is_help=True, help="Simple Agent")
 
 
 @app.command(short_help="Serve all configured interfaces (default)")
 def serve(
     host: str = typer.Option("0.0.0.0", help="Bind host"),  # noqa: B008
     port: int = typer.Option(8000, help="Bind port"),  # noqa: B008
-    config_dir: Path = typer.Option(_CONFIG_DIR, help="Config directory"),  # noqa: B008
-    secrets_dir: Path = typer.Option(_SECRETS_DIR, help="Secrets directory"),  # noqa: B008
+    config_dir: Path = typer.Option(CONFIG_DIR, help="Config directory"),  # noqa: B008
+    secrets_dir: Path = typer.Option(SECRETS_DIR, help="Secrets directory"),  # noqa: B008
     agent_url: str = typer.Option(  # noqa: B008
         "http://localhost:8000", help="Public URL for A2A agent card"
     ),
@@ -47,8 +46,8 @@ def serve(
 
 @app.command(short_help="Interactive terminal chat")
 def chat(
-    config_dir: Path = typer.Option(_CONFIG_DIR, help="Config directory"),  # noqa: B008
-    secrets_dir: Path = typer.Option(_SECRETS_DIR, help="Secrets directory"),  # noqa: B008
+    config_dir: Path = typer.Option(CONFIG_DIR, help="Config directory"),  # noqa: B008
+    secrets_dir: Path = typer.Option(SECRETS_DIR, help="Secrets directory"),  # noqa: B008
     log_level: str = typer.Option("warning", help="Log level"),  # noqa: B008
 ) -> None:
     """Run an interactive terminal chat session with the configured agent."""

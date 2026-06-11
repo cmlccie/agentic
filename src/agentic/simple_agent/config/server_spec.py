@@ -7,9 +7,9 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
-log = logging.getLogger(__name__)
+from . import SECRETS_DIR
 
-_SECRETS_DIR = Path("/etc/agent/secrets")
+log = logging.getLogger(__name__)
 
 
 class BrokerBackend(StrEnum):
@@ -52,7 +52,7 @@ class AgentSecrets:
     All secret names are lowercase filenames (Secret keys are lowercased by Kubernetes).
     """
 
-    def __init__(self, secrets_dir: Path = _SECRETS_DIR) -> None:
+    def __init__(self, secrets_dir: Path = SECRETS_DIR) -> None:
         self._dir = secrets_dir
 
     def _read(self, key: str, default: str | None = None) -> str | None:
