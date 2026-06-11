@@ -1,0 +1,26 @@
+name: simple-agent
+description: "A general-purpose AI assistant"
+
+# Use "openai-compat" sentinel for custom OpenAI-compatible providers (e.g. LM Studio).
+# Requires secret files: agent_model_base_url and agent_model_api_key.
+# For first-class providers (Anthropic, OpenAI, Gemini), use the native model string:
+#   model: anthropic:claude-sonnet-4-6
+#   model: openai:gpt-4o
+model: openai-compat
+model_id: local-model
+
+instructions: |
+  You are a helpful general-purpose AI assistant.
+
+  Answer questions accurately and concisely. If you have tools available, use them
+  to provide more accurate and up-to-date information. If you cannot help with a
+  request, say so clearly.
+
+model_settings:
+  temperature: 0.7
+  max_tokens: 4096
+
+# capabilities:
+#   - MCP:
+#       url: http://tool-server/mcp
+#       id: my-tools

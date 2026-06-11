@@ -1,0 +1,16 @@
+agent_card:
+  display_name: "Simple Agent"
+  description: "A general-purpose AI assistant with OpenAI-compatible, A2A, and web UI interfaces."
+  version: "1.0.0"
+  icon_url: ""
+
+broker:
+  backend: memory  # "memory" | "redis"
+
+interfaces:
+  a2a: true
+  openai_compat: true
+  ui: true
+
+reload:
+  drain_timeout: 30  # seconds to wait for in-flight tasks before forcing reload

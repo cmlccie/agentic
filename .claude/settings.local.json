@@ -23,7 +23,17 @@
       "Bash(python -c *)",
       "WebFetch(domain:pydantic.dev)",
       "WebFetch(domain:ai.pydantic.dev)",
-      "Bash(make check *)"
+      "Bash(make check *)",
+      "Bash(pip index *)",
+      "Bash(pip install *)",
+      "Bash(uv add *)",
+      "Bash(uv sync *)",
+      "Bash(git stash *)",
+      "Bash(make python-base-image *)",
+      "Bash(docker tag *)",
+      "Bash(make agents-simple *)",
+      "Bash(docker rm *)",
+      "Bash(docker run *)"
     ]
   }
 }

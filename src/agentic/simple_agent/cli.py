@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Simple Agent CLI — serve or chat with a config-driven Pydantic AI agent."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import typer
+import uvicorn
+
+from agentic import logging as agentic_logging
+
+app = typer.Typer(no_args_is_help=True, help="Simple Agent")
+
+_CONFIG_DIR = Path("/etc/agent/config")
+_SECRETS_DIR = Path("/etc/agent/secrets")
+
+
+@app.command(short_help="Serve all configured interfaces (default)")
+def serve(
+    host: str = typer.Option("0.0.0.0", help="Bind host"),  # noqa: B008
+    port: int = typer.Option(8000, help="Bind port"),  # noqa: B008
+    config_dir: Path = typer.Option(_CONFIG_DIR, help="Config directory"),  # noqa: B008
+    secrets_dir: Path = typer.Option(_SECRETS_DIR, help="Secrets directory"),  # noqa: B008
+    agent_url: str = typer.Option(  # noqa: B008
+        "http://localhost:8000", help="Public URL for A2A agent card"
+    ),
+    log_level: str = typer.Option("info", help="Log level"),  # noqa: B008
+) -> None:
+    """Start the FastAPI server with all configured interfaces.
+
+    Reads agent.yaml and server.yaml from config_dir. Secrets are read from
+    secrets_dir on every reload cycle — no restart required for key rotation.
+    """
+    agentic_logging.fancy(log_level.upper())
+
+    from .main import create_app
+
+    application = create_app(
+        config_dir=config_dir,
+        secrets_dir=secrets_dir,
+        agent_url=agent_url,
+    )
+
+    uvicorn.run(application, host=host, port=port, log_level=log_level)
+
+
+@app.command(short_help="Interactive terminal chat")
+def chat(
+    config_dir: Path = typer.Option(_CONFIG_DIR, help="Config directory"),  # noqa: B008
+    secrets_dir: Path = typer.Option(_SECRETS_DIR, help="Secrets directory"),  # noqa: B008
+    log_level: str = typer.Option("warning", help="Log level"),  # noqa: B008
+) -> None:
+    """Run an interactive terminal chat session with the configured agent."""
+    agentic_logging.fancy(log_level.upper())
+
+    from .config.agent_spec import load_agent
+    from .config.server_spec import AgentSecrets, load_server_spec
+
+    secrets = AgentSecrets(secrets_dir)
+    load_server_spec(config_dir / "server.yaml")  # validate config exists
+    agent = load_agent(config_dir / "agent.yaml", secrets)
+
+    agent.to_cli_sync(prog_name="simple-agent")

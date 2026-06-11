@@ -1,0 +1,21 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="Simple Agent"
+LABEL org.opencontainers.image.description="A config-driven Pydantic AI agent with OpenAI-compatible, A2A, and web UI interfaces."
+LABEL org.opencontainers.image.documentation="README.md"
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+# Copy default configuration files.
+# In Kubernetes, these are overridden by ConfigMap volume mounts at /etc/agent/config.
+# Do NOT use subPath mounts — they bypass AtomicWriter and never receive live updates.
+RUN mkdir -p /etc/agent/config /etc/agent/secrets
+COPY agent.yaml server.yaml /etc/agent/config/
+
+RUN chown -R appuser:appuser /etc/agent
+USER appuser
+
+# Expose port 8000 for HTTP interfaces (OpenAI-compat, A2A, UI, health)
+EXPOSE 8000
+
+ENTRYPOINT ["simple-agent"]
+CMD ["serve"]
