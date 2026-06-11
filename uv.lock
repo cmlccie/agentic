@@ -46,7 +46,7 @@ dependencies = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-sdk" },
     { name = "pydantic" },
-    { name = "pydantic-ai-slim", extra = ["a2a", "cli", "fastmcp", "mcp", "openai"] },
+    { name = "pydantic-ai-slim", extra = ["a2a", "cli", "fastmcp", "mcp", "openai", "web"] },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "redis", extra = ["hiredis"] },
@@ -76,7 +76,7 @@ requires-dist = [
     { name = "opentelemetry-api", specifier = ">=1.38.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.38.0" },
     { name = "pydantic", specifier = ">=2.12.4" },
-    { name = "pydantic-ai-slim", extras = ["a2a", "cli", "fastmcp", "mcp", "openai"], specifier = ">=1.14.0" },
+    { name = "pydantic-ai-slim", extras = ["a2a", "cli", "fastmcp", "mcp", "openai", "web"], specifier = ">=1.14.0" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "redis", extras = ["hiredis"], specifier = ">=8.0.0" },
@@ -1438,6 +1438,11 @@ mcp = [
 openai = [
     { name = "openai" },
     { name = "tiktoken" },
+]
+web = [
+    { name = "httpx" },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 
 [[package]]
