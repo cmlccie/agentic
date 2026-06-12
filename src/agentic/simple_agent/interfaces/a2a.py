@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from fasta2a import FastA2A
 from fasta2a.broker import InMemoryBroker
+from fasta2a.schema import AgentProvider, Skill
 from fasta2a.storage import InMemoryStorage
 from pydantic_ai import Agent
 
@@ -34,6 +35,23 @@ def build_a2a_app(
     else:
         storage, broker = InMemoryStorage(), InMemoryBroker()
 
+    provider: AgentProvider | None = None
+    if card.provider:
+        provider = AgentProvider(organization=card.provider.organization, url=card.provider.url)
+
+    skills: list[Skill] = [
+        Skill(
+            id=s.id,
+            name=s.name,
+            description=s.description,
+            tags=s.tags,
+            input_modes=s.input_modes,
+            output_modes=s.output_modes,
+            **({"examples": s.examples} if s.examples is not None else {}),
+        )
+        for s in card.skills
+    ]
+
     return agent.to_a2a(
         storage=storage,
         broker=broker,
@@ -41,6 +59,8 @@ def build_a2a_app(
         description=card.description,
         version=card.version,
         url=agent_url,
+        provider=provider,
+        skills=skills or None,
     )
 
 

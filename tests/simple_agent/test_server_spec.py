@@ -8,7 +8,9 @@ import yaml
 from agentic.simple_agent.config.server_spec import (
     AgentSecrets,
     BrokerBackend,
+    ProviderConfig,
     ServerSpec,
+    SkillConfig,
     load_server_spec,
 )
 
@@ -52,6 +54,19 @@ class TestServerSpec:
                 "description": "Desc",
                 "version": "2.0.0",
                 "icon_url": "http://x.com/icon.png",
+                "documentation_url": "http://docs.example.com",
+                "provider": {"organization": "Acme", "url": "http://acme.com"},
+                "skills": [
+                    {
+                        "id": "chat",
+                        "name": "Chat",
+                        "description": "General chat",
+                        "tags": ["general"],
+                        "examples": ["Hello!"],
+                        "input_modes": ["text/plain"],
+                        "output_modes": ["text/plain"],
+                    }
+                ],
             },
             "broker": {"backend": "redis"},
             "interfaces": {"a2a": False, "openai_compat": True, "ui": False},
@@ -62,6 +77,35 @@ class TestServerSpec:
         assert spec.interfaces.a2a is False
         assert spec.reload.drain_timeout == 60.0
         assert spec.agent_card.version == "2.0.0"
+        assert spec.agent_card.documentation_url == "http://docs.example.com"
+        assert isinstance(spec.agent_card.provider, ProviderConfig)
+        assert spec.agent_card.provider.organization == "Acme"
+        assert len(spec.agent_card.skills) == 1
+        skill = spec.agent_card.skills[0]
+        assert isinstance(skill, SkillConfig)
+        assert skill.id == "chat"
+        assert skill.tags == ["general"]
+        assert skill.examples == ["Hello!"]
+
+    def test_skills_default_empty(self):
+        raw = {"agent_card": {"display_name": "X", "description": "Y"}}
+        spec = ServerSpec.model_validate(raw)
+        assert spec.agent_card.skills == []
+        assert spec.agent_card.provider is None
+        assert spec.agent_card.documentation_url is None
+
+    def test_skill_default_modes(self):
+        raw = {
+            "agent_card": {
+                "display_name": "X",
+                "description": "Y",
+                "skills": [{"id": "s1", "name": "S1", "description": "desc", "tags": []}],
+            }
+        }
+        spec = ServerSpec.model_validate(raw)
+        skill = spec.agent_card.skills[0]
+        assert skill.input_modes == ["text/plain"]
+        assert skill.output_modes == ["text/plain"]
 
     def test_missing_agent_card_raises(self):
         from pydantic import ValidationError

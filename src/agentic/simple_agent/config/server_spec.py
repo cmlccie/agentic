@@ -17,11 +17,29 @@ class BrokerBackend(StrEnum):
     REDIS = "redis"
 
 
+class SkillConfig(BaseModel):
+    id: str
+    name: str
+    description: str
+    tags: list[str] = Field(default_factory=list)
+    examples: list[str] | None = None
+    input_modes: list[str] = Field(default_factory=lambda: ["text/plain"])
+    output_modes: list[str] = Field(default_factory=lambda: ["text/plain"])
+
+
+class ProviderConfig(BaseModel):
+    organization: str
+    url: str
+
+
 class AgentCardConfig(BaseModel):
     display_name: str
     description: str
     version: str = "1.0.0"
     icon_url: str = ""
+    documentation_url: str | None = None
+    provider: ProviderConfig | None = None
+    skills: list[SkillConfig] = Field(default_factory=list)
 
 
 class BrokerConfig(BaseModel):

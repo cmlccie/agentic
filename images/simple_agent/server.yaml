@@ -3,6 +3,22 @@ agent_card:
   description: "A general-purpose AI assistant with OpenAI-compatible, A2A, and web UI interfaces."
   version: "1.0.0"
   icon_url: ""
+  documentation_url: ""
+  provider:
+    organization: ""
+    url: ""
+  skills: []
+  # Example skill entry:
+  # skills:
+  #   - id: general-assistant
+  #     name: General Assistant
+  #     description: Answers questions and completes tasks across a wide range of topics.
+  #     tags: [general, assistant]
+  #     examples:
+  #       - "Summarize this document"
+  #       - "Write a Python script that..."
+  #     input_modes: [text/plain]
+  #     output_modes: [text/plain]
 
 broker:
   backend: memory  # "memory" | "redis"
