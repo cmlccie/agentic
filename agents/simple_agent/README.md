@@ -12,16 +12,16 @@ The agent's identity — model, instructions, MCP tool servers — is defined en
 
 ## Interfaces and Endpoints
 
-| Path | Description |
-|---|---|
-| `GET /health/live` | Liveness probe — always 200 while the process is alive |
-| `GET /health/ready` | Readiness probe — 503 during hot-reload drain/reload cycle |
-| `GET /v1/models` | List available models |
-| `POST /v1/chat/completions` | OpenAI-compatible chat completions (streaming and non-streaming) |
-| `GET /a2a/.well-known/agent-card.json` | A2A agent card |
-| `POST /a2a/` | A2A JSON-RPC task endpoint |
-| `GET /ui/` | Streaming chat web UI |
-| `POST /ui/chat` | SSE chat endpoint (used by the web UI) |
+| Path                                   | Description                                                      |
+| -------------------------------------- | ---------------------------------------------------------------- |
+| `GET /health/live`                     | Liveness probe — always 200 while the process is alive           |
+| `GET /health/ready`                    | Readiness probe — 503 during hot-reload drain/reload cycle       |
+| `GET /v1/models`                       | List available models                                            |
+| `POST /v1/chat/completions`            | OpenAI-compatible chat completions (streaming and non-streaming) |
+| `GET /a2a/.well-known/agent-card.json` | A2A agent card                                                   |
+| `POST /a2a/`                           | A2A JSON-RPC task endpoint                                       |
+| `GET /ui/`                             | Streaming chat web UI                                            |
+| `POST /ui/chat`                        | SSE chat endpoint (used by the web UI)                           |
 
 All non-health endpoints return `503 Retry-After: 5` during a hot-reload drain/reload cycle.
 
@@ -53,8 +53,8 @@ echo "sk-..."  > /tmp/my-agent-secrets/openai_api_key
 docker run -d \
   --name my-agent \
   -p 8000:8000 \
-  -v /tmp/my-agent-secrets:/etc/agent/secrets:ro \
-  ghcr.io/cmlccie/agentic/agents-simple:latest \
+  -v scratch/simple-agent-secrets:/etc/agent/secrets:ro \
+  ghcr.io/cmlccie/agentic/simple-agent:latest \
   serve --agent-url http://localhost:8000
 ```
 
@@ -103,7 +103,7 @@ The `simple-agent chat` command loads the same config and starts an interactive 
 ```bash
 docker run -it --rm \
   -v /tmp/my-agent-secrets:/etc/agent/secrets:ro \
-  ghcr.io/cmlccie/agentic/agents-simple:latest \
+  ghcr.io/cmlccie/agentic/simple-agent:latest \
   chat
 ```
 
@@ -113,7 +113,7 @@ To use a custom config directory instead of the image defaults:
 docker run -it --rm \
   -v /path/to/my/config:/etc/agent/config:ro \
   -v /tmp/my-agent-secrets:/etc/agent/secrets:ro \
-  ghcr.io/cmlccie/agentic/agents-simple:latest \
+  ghcr.io/cmlccie/agentic/simple-agent:latest \
   chat
 ```
 
@@ -148,10 +148,10 @@ for chunk in stream:
 
 Pre-built images are published to the GitHub Container Registry:
 
-```
-ghcr.io/cmlccie/agentic/agents-simple:latest   # latest build from main
-ghcr.io/cmlccie/agentic/agents-simple:<version> # specific release (e.g. 1.0.0)
-ghcr.io/cmlccie/agentic/agents-simple:<branch>-<sha> # specific commit
+```text
+ghcr.io/cmlccie/agentic/simple-agent:latest         # latest build from main
+ghcr.io/cmlccie/agentic/simple-agent:<version>      # specific release (e.g. 1.0.0)
+ghcr.io/cmlccie/agentic/simple-agent:<branch>-<sha> # specific commit
 ```
 
 ---
@@ -178,7 +178,7 @@ model: openai-compat
 model_id: my-local-model             # reported in /v1/models; passed to the API
 
 instructions: |
-  You are a helpful assistant that specialises in X.
+  You are a helpful assistant that specializes in X.
   Always respond in plain language.
 
 model_settings:
@@ -201,40 +201,40 @@ capabilities:
 
 ```yaml
 agent_card:
-  display_name: "My Agent"           # shown in A2A agent card and API title
+  display_name: "My Agent" # shown in A2A agent card and API title
   description: "Does X for callers"
   version: "1.0.0"
-  icon_url: ""                       # optional URL to a PNG icon
+  icon_url: "" # optional URL to a PNG icon
 
 broker:
-  backend: memory                    # "memory" (default) | "redis"
+  backend: memory # "memory" (default) | "redis"
   # Redis requires secret file: agent_redis_url
   # Default Redis URL if secret not present: redis://localhost:6379/0
 
 interfaces:
-  a2a: true                          # A2A protocol at /a2a/
-  openai_compat: true                # OpenAI-compatible API at /v1/
-  ui: true                           # Chat web UI at /ui/
+  a2a: true # A2A protocol at /a2a/
+  openai_compat: true # OpenAI-compatible API at /v1/
+  ui: true # Chat web UI at /ui/
 
 reload:
-  drain_timeout: 30                  # seconds to wait for in-flight requests before forcing reload
+  drain_timeout: 30 # seconds to wait for in-flight requests before forcing reload
 ```
 
 ### Secrets reference
 
 All secrets are read from individual files under `/etc/agent/secrets/`. File names match the secret keys (lowercased). On Kubernetes, these files are projected from a Secret volume.
 
-| File | Required for |
-|---|---|
-| `anthropic_api_key` | `model: anthropic:*` providers |
-| `openai_api_key` | `model: openai:*` providers |
-| `agent_model_base_url` | `model: openai-compat` |
-| `agent_model_api_key` | `model: openai-compat` |
-| `agent_redis_url` | `broker.backend: redis` |
-| `<any_key>` | MCP header injection via `${ANY_KEY}` in `agent.yaml` |
+| File                   | Required for                                          |
+| ---------------------- | ----------------------------------------------------- |
+| `anthropic_api_key`    | `model: anthropic:*` providers                        |
+| `openai_api_key`       | `model: openai:*` providers                           |
+| `agent_model_base_url` | `model: openai-compat`                                |
+| `agent_model_api_key`  | `model: openai-compat`                                |
+| `agent_redis_url`      | `broker.backend: redis`                               |
+| `<any_key>`            | MCP header injection via `${ANY_KEY}` in `agent.yaml` |
 
 > **Local dev fallback**: If a secret file is missing, the agent falls back to the environment
-> variable of the same name (uppercased). For example, `agent_model_api_key` falls back to
+> variable of the same name (in uppercase). For example, `agent_model_api_key` falls back to
 > `AGENT_MODEL_API_KEY`. This makes local runs without a secrets directory possible.
 
 ---
@@ -243,13 +243,13 @@ All secrets are read from individual files under `/etc/agent/secrets/`. File nam
 
 ### Architecture overview
 
-```
+```text
               Kubernetes Cluster
 ┌─────────────────────────────────────────────────────┐
 │                                                     │
 │  ConfigMap: my-agent-config                         │
 │  ├── agent.yaml   ─── mounted at /etc/agent/config  │
-│  └── server.yaml  ─┘                               │
+│  └── server.yaml  ─┘                                │
 │                                                     │
 │  Secret: my-agent-secrets                           │
 │  └── (key files) ──── mounted at /etc/agent/secrets │
@@ -279,7 +279,7 @@ data:
     description: "A helpful assistant"
     model: anthropic:claude-sonnet-4-6
     instructions: |
-      You are a helpful assistant that specialises in answering questions about
+      You are a helpful assistant that specializes in answering questions about
       internal company policy. Always cite the source document when you answer.
     model_settings:
       temperature: 0.2
@@ -352,7 +352,7 @@ spec:
     spec:
       containers:
         - name: agent
-          image: ghcr.io/cmlccie/agentic/agents-simple:latest
+          image: ghcr.io/cmlccie/agentic/simple-agent:latest
           args:
             - serve
             - --agent-url=http://my-agent.agents.svc.cluster.local:8000
@@ -379,7 +379,7 @@ spec:
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 5
-            failureThreshold: 24   # 120 s window for drain + reload
+            failureThreshold: 24 # 120 s window for drain + reload
           resources:
             requests:
               cpu: "250m"
@@ -390,10 +390,10 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: my-agent-config    # NO subPath — mount the full directory
+            name: my-agent-config # NO subPath — mount the full directory
         - name: secrets
           secret:
-            secretName: my-agent-secrets   # NO subPath — mount the full directory
+            secretName: my-agent-secrets # NO subPath — mount the full directory
 ```
 
 ### Service
@@ -419,13 +419,14 @@ spec:
 
 The agent watches `/etc/agent/config` and `/etc/agent/secrets` for changes. When a change is detected — or when the process receives `SIGHUP` — the agent reloads without downtime:
 
-```
+```text
 RUNNING  ──(file change or SIGHUP)──►  DRAINING  ──(in-flight==0 or timeout)──►  RELOADING
    ▲                                                                                  │
-   └──────────────────────────────(reload complete)──────────────────────────────────┘
+   └──────────────────────────────(reload complete)───────────────────────────────────┘
 ```
 
 During DRAINING and RELOADING:
+
 - `/health/ready` returns `503` — Kubernetes stops routing new traffic to this pod
 - `/health/live` continues to return `200` — the pod is not killed
 - In-flight requests are allowed to complete (up to `reload.drain_timeout` seconds)
@@ -442,7 +443,7 @@ During DRAINING and RELOADING:
 kubectl exec -n agents deploy/my-agent -- kill -HUP 1
 
 # Via ConfigMap update (reload is triggered automatically by file watcher)
-kubectl edit configmap my-agent-config -n agents
+kubectl edit ConfigMap my-agent-config -n agents
 ```
 
 ---
@@ -538,7 +539,7 @@ capabilities:
       url: http://secured-server/mcp
       id: secured
       headers:
-        Authorization: "Bearer ${MCP_TOKEN}"   # expanded from /etc/agent/secrets/mcp_token
+        Authorization: "Bearer ${MCP_TOKEN}" # expanded from /etc/agent/secrets/mcp_token
 ```
 
 Secret files referenced in `${PLACEHOLDER}` patterns are read at load time. When the agent reloads (after a ConfigMap update or SIGHUP), the headers are re-expanded from the current secret files — so rotating a token requires only updating the Secret and triggering a reload.
@@ -547,7 +548,7 @@ Secret files referenced in `${PLACEHOLDER}` patterns are read at load time. When
 
 ## CLI Reference
 
-```
+```text
 $ simple-agent --help
 
  Usage: simple-agent [OPTIONS] COMMAND [ARGS]...
@@ -556,11 +557,11 @@ $ simple-agent --help
 
 ╭─ Commands ─────────────────────────────────────────────────────────────────╮
 │ serve   Serve all configured interfaces (default)                          │
-│ chat    Interactive terminal chat                                           │
+│ chat    Interactive terminal chat                                          │
 ╰────────────────────────────────────────────────────────────────────────────╯
 ```
 
-```
+```shell
 $ simple-agent serve --help
 
  Usage: simple-agent serve [OPTIONS]
@@ -577,7 +578,7 @@ $ simple-agent serve --help
 ╰────────────────────────────────────────────────────────────────────────────╯
 ```
 
-```
+```shell
 $ simple-agent chat --help
 
  Usage: simple-agent chat [OPTIONS]
