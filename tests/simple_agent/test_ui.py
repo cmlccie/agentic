@@ -1,132 +1,157 @@
 """Tests for agentic.simple_agent.interfaces.ui."""
 
-import json
-from unittest.mock import AsyncMock, MagicMock
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import MagicMock
 
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from starlette.responses import HTMLResponse, JSONResponse
+from starlette.testclient import TestClient
 
-from agentic.simple_agent.interfaces.ui import build_ui_router
+from agentic.simple_agent.interfaces.ui import build_ui_app
+
 
 # -------------------------------------------------------------------------------------------------
-# Fixtures
+# Helpers
 # -------------------------------------------------------------------------------------------------
 
 
-def _make_mock_agent() -> MagicMock:
-    agent = MagicMock()
+def _html_asgi(content: str) -> Any:
+    """Minimal ASGI app that serves an HTML response."""
 
-    async def _fake_stream_text(delta=False):
-        for chunk in ["Hello", " world", "!"]:
-            yield chunk
+    async def app(scope, receive, send):
+        await HTMLResponse(content)(scope, receive, send)
 
-    mock_stream_result = MagicMock()
-    mock_stream_result.stream_text = _fake_stream_text
-
-    mock_ctx = MagicMock()
-    mock_ctx.__aenter__ = AsyncMock(return_value=mock_stream_result)
-    mock_ctx.__aexit__ = AsyncMock(return_value=False)
-    agent.run_stream = MagicMock(return_value=mock_ctx)
-
-    return agent
+    return app
 
 
-def _make_app(agent=None) -> tuple[FastAPI, MagicMock]:
-    agent = agent or _make_mock_agent()
-    app_state = MagicMock()
-    app_state.agent = agent
+def _json_asgi(data: dict) -> Any:
+    """Minimal ASGI app that serves a JSON response."""
 
+    async def app(scope, receive, send):
+        await JSONResponse(data)(scope, receive, send)
+
+    return app
+
+
+def _make_app(inner_app: Any, prefix: str = '/ui') -> FastAPI:
+    """Mount build_ui_app at *prefix* and return the outer FastAPI app."""
+    state = MagicMock()
+    state.agent = MagicMock()
+    state.agent.to_web.return_value = inner_app
     app = FastAPI()
-    router = build_ui_router(app_state)
-    app.include_router(router, prefix="/ui")
-    return app, agent
+    app.mount(prefix, build_ui_app(state))
+    return app
 
 
 # -------------------------------------------------------------------------------------------------
-# GET /ui/ — HTML page
+# Rebase script injection
 # -------------------------------------------------------------------------------------------------
 
 
-class TestUIRoot:
-    def test_returns_200(self):
-        app, _ = _make_app()
-        assert TestClient(app).get("/ui/").status_code == 200
+class TestRebaseInjection:
+    """HTML responses served under a mount prefix get the rebase shim injected."""
 
-    def test_returns_html(self):
-        app, _ = _make_app()
-        resp = TestClient(app).get("/ui/")
-        assert "text/html" in resp.headers["content-type"]
+    _HTML = '<html><head><title>T</title></head><body>body</body></html>'
 
-    def test_html_has_chat_form(self):
-        app, _ = _make_app()
-        resp = TestClient(app).get("/ui/")
-        assert "<textarea" in resp.text
-        assert "<button" in resp.text
+    def test_rebase_flag_present(self):
+        app = _make_app(_html_asgi(self._HTML))
+        resp = TestClient(app).get('/ui/')
+        assert 'window.__aiUiRebased' in resp.text
+
+    def test_base_path_is_mount_prefix(self):
+        app = _make_app(_html_asgi(self._HTML))
+        resp = TestClient(app).get('/ui/')
+        # The JS variable must be set to the mount prefix as a JSON string.
+        assert 'var b="/ui"' in resp.text
+
+    def test_script_inserted_before_head_close(self):
+        app = _make_app(_html_asgi(self._HTML))
+        resp = TestClient(app).get('/ui/')
+        # Script tag is injected and </head> still closes the head element.
+        script_pos = resp.text.index('<script>')
+        head_close_pos = resp.text.index('</head>')
+        assert script_pos < head_close_pos
+
+    def test_different_prefix(self):
+        app = _make_app(_html_asgi(self._HTML), prefix='/agents/demo')
+        resp = TestClient(app).get('/agents/demo/')
+        assert 'var b="/agents/demo"' in resp.text
+
+    def test_content_length_updated(self):
+        app = _make_app(_html_asgi(self._HTML))
+        resp = TestClient(app).get('/ui/')
+        cl = int(resp.headers['content-length'])
+        assert cl == len(resp.content)
+
+    def test_status_code_preserved(self):
+        app = _make_app(_html_asgi(self._HTML))
+        assert TestClient(app).get('/ui/').status_code == 200
 
 
 # -------------------------------------------------------------------------------------------------
-# POST /ui/chat — SSE stream
+# Non-HTML responses pass through unmodified
 # -------------------------------------------------------------------------------------------------
 
 
-class TestUIChat:
-    def _post(self, app, messages):
-        return TestClient(app).post("/ui/chat", json={"messages": messages})
+class TestPassThrough:
+    def test_json_not_modified(self):
+        payload = {'key': 'value'}
+        app = _make_app(_json_asgi(payload))
+        resp = TestClient(app).get('/ui/')
+        assert resp.json() == payload
+        assert 'aiUiRebased' not in resp.text
 
-    def test_returns_200(self):
-        app, _ = _make_app()
-        resp = self._post(app, [{"role": "user", "content": "Hi"}])
-        assert resp.status_code == 200
+    def test_json_content_length_unchanged(self):
+        payload = {'key': 'value'}
+        app = _make_app(_json_asgi(payload))
+        resp = TestClient(app).get('/ui/')
+        cl = int(resp.headers['content-length'])
+        assert cl == len(resp.content)
 
-    def test_content_type_is_event_stream(self):
-        app, _ = _make_app()
-        resp = self._post(app, [{"role": "user", "content": "Hi"}])
-        assert "text/event-stream" in resp.headers["content-type"]
 
-    def test_ends_with_done(self):
-        app, _ = _make_app()
-        resp = self._post(app, [{"role": "user", "content": "Hi"}])
-        assert "data: [DONE]" in resp.text
+# -------------------------------------------------------------------------------------------------
+# No injection when mounted at root (root_path is empty)
+# -------------------------------------------------------------------------------------------------
 
-    def test_chunks_contain_content(self):
-        app, _ = _make_app()
-        resp = self._post(app, [{"role": "user", "content": "Hi"}])
-        content = ""
-        for line in resp.text.split("\n"):
-            line = line.strip()
-            if not line.startswith("data: ") or line == "data: [DONE]":
-                continue
-            chunk = json.loads(line[6:])
-            content += chunk["choices"][0]["delta"]["content"]
-        assert content == "Hello world!"
 
-    def test_run_stream_called_with_last_message(self):
-        app, agent = _make_app()
-        self._post(
-            app,
-            [
-                {"role": "system", "content": "Be helpful."},
-                {"role": "user", "content": "What's up?"},
-            ],
-        )
-        agent.run_stream.assert_called_once()
-        call_args = agent.run_stream.call_args
-        assert call_args.args[0] == "What's up?"
+class TestNoInjectionAtRoot:
+    """When the UI sub-app is at the domain root its root_path is '' — no injection."""
 
-    def test_history_passed_for_multi_message(self):
-        app, agent = _make_app()
-        self._post(
-            app,
-            [
-                {"role": "system", "content": "Be helpful."},
-                {"role": "user", "content": "Q"},
-            ],
-        )
-        call_args = agent.run_stream.call_args
-        assert call_args.kwargs["message_history"] is not None
+    _HTML = '<html><head></head><body>ok</body></html>'
 
-    def test_no_messages_returns_error_sse(self):
-        app, _ = _make_app()
-        resp = TestClient(app).post("/ui/chat", json={"messages": []})
-        assert resp.status_code == 200
-        assert "error" in resp.text
+    def test_no_rebase_flag_at_root(self):
+        # Mount at '/' means no stripping, root_path stays ''.
+        state = MagicMock()
+        state.agent = MagicMock()
+        state.agent.to_web.return_value = _html_asgi(self._HTML)
+
+        # Call _DynamicUIApp directly via a bare ASGI scope without root_path.
+        from agentic.simple_agent.interfaces.ui import _DynamicUIApp
+
+        ui = _DynamicUIApp(state)
+
+        # Build a minimal HTTP scope with no root_path.
+        collected: list[dict] = []
+
+        async def fake_send(msg):
+            collected.append(msg)
+
+        async def fake_receive():
+            return {'type': 'http.disconnect'}
+
+        scope = {
+            'type': 'http',
+            'method': 'GET',
+            'path': '/',
+            'query_string': b'',
+            'headers': [],
+        }
+
+        import asyncio
+
+        asyncio.run(ui(scope, fake_receive, fake_send))
+
+        body = b''.join(m.get('body', b'') for m in collected if m['type'] == 'http.response.body')
+        assert b'aiUiRebased' not in body
