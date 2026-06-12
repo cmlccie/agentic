@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from fasta2a import FastA2A
 from fasta2a.broker import InMemoryBroker
+from fasta2a.pydantic_ai import agent_to_a2a
 from fasta2a.schema import AgentProvider, Skill
 from fasta2a.storage import InMemoryStorage
 from pydantic_ai import Agent
@@ -52,7 +53,8 @@ def build_a2a_app(
         for s in card.skills
     ]
 
-    return agent.to_a2a(
+    return agent_to_a2a(
+        agent,
         storage=storage,
         broker=broker,
         name=card.display_name,

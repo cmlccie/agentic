@@ -88,7 +88,17 @@ async def _run_reload_loop(app: FastAPI) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     state: AppState = app.state.app_state
 
-    await state.agent.__aenter__()
+    initial_connect_failed = False
+    try:
+        await state.agent.__aenter__()
+    except Exception as exc:
+        log.warning(
+            "lifespan: initial MCP connection failed (%s); starting in degraded mode — "
+            "will retry automatically",
+            exc,
+        )
+        initial_connect_failed = True
+
     state.coordinator.mark_running()
 
     stop_event = asyncio.Event()
@@ -107,6 +117,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     install_sighup_handler(state.coordinator)
+
+    if initial_connect_failed:
+        state.coordinator.trigger_reload()
 
     # Starlette does not call mounted sub-app lifespans. Manually start the
     # FastA2A task_manager so A2A requests can be processed.
