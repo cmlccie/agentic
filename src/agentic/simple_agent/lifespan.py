@@ -122,11 +122,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         state.coordinator.trigger_reload()
 
     # Starlette does not call mounted sub-app lifespans. Manually start the
-    # FastA2A task_manager so A2A requests can be processed.
+    # FastA2A task_manager (broker channel init) and the worker (task consumer).
     a2a_ctx = None
+    a2a_worker_ctx = None
     if state.a2a_app is not None:
         a2a_ctx = state.a2a_app.task_manager
         await a2a_ctx.__aenter__()
+        if hasattr(state.a2a_app, '_agent_worker'):
+            a2a_worker_ctx = state.a2a_app._agent_worker.run()
+            await a2a_worker_ctx.__aenter__()
 
     try:
         yield
@@ -136,6 +140,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         reload_task.cancel()
         watcher_task.cancel()
         secrets_watcher_task.cancel()
+
+        if a2a_worker_ctx is not None:
+            try:
+                await a2a_worker_ctx.__aexit__(None, None, None)
+            except Exception as exc:
+                log.error("lifespan: error stopping A2A worker: %s", exc)
 
         if a2a_ctx is not None:
             try:
