@@ -49,7 +49,6 @@ class BrokerConfig(BaseModel):
 class InterfacesConfig(BaseModel):
     a2a: bool = True
     openai_compat: bool = True
-    ui: bool = True
 
 
 class ReloadConfig(BaseModel):

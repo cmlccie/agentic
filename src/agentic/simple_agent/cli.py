@@ -44,6 +44,32 @@ def serve(
     uvicorn.run(application, host=host, port=port, log_level=log_level)
 
 
+@app.command(short_help="Serve the web chat UI")
+def web_chat(
+    host: str = typer.Option("0.0.0.0", help="Bind host"),  # noqa: B008
+    port: int = typer.Option(8000, help="Bind port"),  # noqa: B008
+    config_dir: Path = typer.Option(CONFIG_DIR, help="Config directory"),  # noqa: B008
+    secrets_dir: Path = typer.Option(SECRETS_DIR, help="Secrets directory"),  # noqa: B008
+    log_level: str = typer.Option("info", help="Log level"),  # noqa: B008
+) -> None:
+    """Serve the Pydantic AI web chat UI for the configured agent.
+
+    Runs a standalone ASGI server for the browser-based chat interface.
+    The web-chat server is separate from the serve process — run them on
+    different ports if you need both simultaneously.
+    """
+    agentic_logging.fancy(log_level.upper())
+
+    from .config.agent_spec import load_agent
+    from .config.server_spec import AgentSecrets, load_server_spec
+
+    secrets = AgentSecrets(secrets_dir)
+    load_server_spec(config_dir / "server.yaml")  # validate config exists
+    agent = load_agent(config_dir / "agent.yaml", secrets)
+
+    uvicorn.run(agent.to_web(), host=host, port=port, log_level=log_level)
+
+
 @app.command(short_help="Interactive terminal chat")
 def chat(
     config_dir: Path = typer.Option(CONFIG_DIR, help="Config directory"),  # noqa: B008

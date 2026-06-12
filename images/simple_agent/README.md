@@ -1,16 +1,19 @@
 # Simple Agent
 
-A config-driven Pydantic AI agent that exposes three interfaces simultaneously from a single container:
+A config-driven Pydantic AI agent that exposes two production interfaces from a single container:
 
 - **OpenAI-compatible REST API** — drop-in replacement for `/v1/chat/completions`
 - **Agent2Agent (A2A) protocol** — interoperable with other A2A agents
-- **Web UI** — streaming chat interface for browser-based testing
+
+A separate `web-chat` command starts a standalone browser-based chat UI — useful for local testing and development, but not part of the `serve` process.
 
 The agent's identity — model, instructions, MCP tool servers — is defined entirely in `agent.yaml`. Infrastructure settings live in `server.yaml`. Both files are hot-reloaded at runtime: update a ConfigMap or rotate a secret, and the agent reloads without downtime.
 
 ---
 
 ## Interfaces and Endpoints
+
+### `simple-agent serve` endpoints
 
 | Path                                   | Description                                                      |
 | -------------------------------------- | ---------------------------------------------------------------- |
@@ -20,10 +23,15 @@ The agent's identity — model, instructions, MCP tool servers — is defined en
 | `POST /v1/chat/completions`            | OpenAI-compatible chat completions (streaming and non-streaming) |
 | `GET /a2a/.well-known/agent-card.json` | A2A agent card                                                   |
 | `POST /a2a/`                           | A2A JSON-RPC task endpoint                                       |
-| `GET /ui/`                             | Streaming chat web UI                                            |
-| `POST /ui/chat`                        | SSE chat endpoint (used by the web UI)                           |
 
 All non-health endpoints return `503 Retry-After: 5` during a hot-reload drain/reload cycle.
+
+### `simple-agent web-chat` endpoints
+
+| Path        | Description                               |
+| ----------- | ----------------------------------------- |
+| `GET /`     | Streaming chat web UI                     |
+| `POST /chat`| SSE chat endpoint (used by the web UI)    |
 
 ---
 
@@ -92,9 +100,19 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-### 5. Open the web UI
+### 5. Open the web chat UI
 
-Navigate to **[http://localhost:8000/ui/](http://localhost:8000/ui/)** in your browser. The chat UI streams responses as they arrive.
+Run the `web-chat` command on a separate port:
+
+```bash
+docker run -it --rm \
+  -p 8001:8001 \
+  -v /tmp/my-agent-secrets:/etc/agent/secrets:ro \
+  ghcr.io/cmlccie/agentic/simple-agent:latest \
+  web-chat --port 8001
+```
+
+Then navigate to **[http://localhost:8001/](http://localhost:8001/)** in your browser.
 
 ### 6. Run the terminal chat interface
 
@@ -214,7 +232,6 @@ broker:
 interfaces:
   a2a: true # A2A protocol at /a2a/
   openai_compat: true # OpenAI-compatible API at /v1/
-  ui: true # Chat web UI at /ui/
 
 reload:
   drain_timeout: 30 # seconds to wait for in-flight requests before forcing reload
@@ -260,10 +277,12 @@ All secrets are read from individual files under `/etc/agent/secrets/`. File nam
 │          ├── /health/live  ← liveness probe         │
 │          ├── /health/ready ← readiness probe        │
 │          ├── /v1/          ← OpenAI-compat API      │
-│          ├── /a2a/         ← A2A protocol           │
-│          └── /ui/          ← Web UI                 │
+│          └── /a2a/         ← A2A protocol           │
 └─────────────────────────────────────────────────────┘
 ```
+
+> **web-chat is not part of the production deployment.** Use `simple-agent web-chat` locally
+> or in a separate dev/staging container for browser-based testing.
 
 ### ConfigMap
 
@@ -301,7 +320,6 @@ data:
     interfaces:
       a2a: true
       openai_compat: true
-      ui: true
     reload:
       drain_timeout: 30
 ```
@@ -434,7 +452,7 @@ During DRAINING and RELOADING:
 
 **What is hot-reloaded**: model, instructions, model settings, MCP tool servers, drain timeout.
 
-**What requires a pod restart**: enabling or disabling interfaces (`a2a`, `openai_compat`, `ui`), changing `broker.backend`.
+**What requires a pod restart**: enabling or disabling interfaces (`a2a`, `openai_compat`), changing `broker.backend`.
 
 ### Triggering a reload manually
 
@@ -556,8 +574,9 @@ $ simple-agent --help
  Simple Agent
 
 ╭─ Commands ─────────────────────────────────────────────────────────────────╮
-│ serve   Serve all configured interfaces (default)                          │
-│ chat    Interactive terminal chat                                          │
+│ serve     Serve all configured interfaces (default)                        │
+│ web-chat  Serve the web chat UI                                            │
+│ chat      Interactive terminal chat                                        │
 ╰────────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -574,6 +593,22 @@ $ simple-agent serve --help
 │ --config-dir     PATH  Config directory [default: /etc/agent/config]       │
 │ --secrets-dir    PATH  Secrets directory [default: /etc/agent/secrets]     │
 │ --agent-url      TEXT  Public URL for A2A agent card                       │
+│ --log-level      TEXT  Log level [default: info]                           │
+╰────────────────────────────────────────────────────────────────────────────╯
+```
+
+```shell
+$ simple-agent web-chat --help
+
+ Usage: simple-agent web-chat [OPTIONS]
+
+ Serve the Pydantic AI web chat UI for the configured agent.
+
+╭─ Options ──────────────────────────────────────────────────────────────────╮
+│ --host           TEXT  Bind host [default: 0.0.0.0]                        │
+│ --port           INT   Bind port [default: 8000]                           │
+│ --config-dir     PATH  Config directory [default: /etc/agent/config]       │
+│ --secrets-dir    PATH  Secrets directory [default: /etc/agent/secrets]     │
 │ --log-level      TEXT  Log level [default: info]                           │
 ╰────────────────────────────────────────────────────────────────────────────╯
 ```

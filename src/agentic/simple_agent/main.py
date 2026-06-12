@@ -13,7 +13,6 @@ from .config.server_spec import AgentSecrets, load_server_spec
 from .health import router as health_router
 from .interfaces.a2a import build_a2a_app
 from .interfaces.openai_compat import build_openai_router
-from .interfaces.ui import build_ui_app
 from .lifespan import AppState, lifespan
 from .reload import ReloadCoordinator
 
@@ -85,8 +84,5 @@ def create_app(
         model_name = agent.name or server_spec.agent_card.display_name
         openai_router = build_openai_router(_state, model_name=model_name)
         app.include_router(openai_router)
-
-    if server_spec.interfaces.ui:
-        app.mount("/ui", build_ui_app(_state))
 
     return app

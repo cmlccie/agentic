@@ -44,7 +44,6 @@ class TestServerSpec:
         assert spec.broker.backend == BrokerBackend.MEMORY
         assert spec.interfaces.a2a is True
         assert spec.interfaces.openai_compat is True
-        assert spec.interfaces.ui is True
         assert spec.reload.drain_timeout == 30.0
 
     def test_all_fields_parsed(self):
@@ -69,7 +68,7 @@ class TestServerSpec:
                 ],
             },
             "broker": {"backend": "redis"},
-            "interfaces": {"a2a": False, "openai_compat": True, "ui": False},
+            "interfaces": {"a2a": False, "openai_compat": True},
             "reload": {"drain_timeout": 60.0},
         }
         spec = ServerSpec.model_validate(raw)
