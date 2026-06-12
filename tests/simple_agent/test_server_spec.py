@@ -98,7 +98,9 @@ class TestServerSpec:
             "agent_card": {
                 "display_name": "X",
                 "description": "Y",
-                "skills": [{"id": "s1", "name": "S1", "description": "desc", "tags": []}],
+                "skills": [
+                    {"id": "s1", "name": "S1", "description": "desc", "tags": []}
+                ],
             }
         }
         spec = ServerSpec.model_validate(raw)

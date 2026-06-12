@@ -15,7 +15,7 @@ from rich.logging import RichHandler
 # --------------------------------------------------------------------------------------
 
 
-def silent(level: int = logging.WARNING):
+def silent(level: int | str = logging.WARNING):
     """Remove all existing logging handlers and set the logging level."""
 
     # Remove all existing handlers
@@ -36,7 +36,7 @@ def silent(level: int = logging.WARNING):
 # --------------------------------------------------------------------------------------
 
 
-def fancy(level: int = logging.INFO):
+def fancy(level: int | str = logging.INFO):
     logging.basicConfig(
         level=level,
         format="%(message)s",

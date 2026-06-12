@@ -38,7 +38,9 @@ def build_a2a_app(
 
     provider: AgentProvider | None = None
     if card.provider:
-        provider = AgentProvider(organization=card.provider.organization, url=card.provider.url)
+        provider = AgentProvider(
+            organization=card.provider.organization, url=card.provider.url
+        )
 
     skills: list[Skill] = [
         Skill(
@@ -73,9 +75,9 @@ def build_a2a_app(
     # fasta2a serves the agent card at /.well-known/agent-card.json; the A2A
     # spec standard path is /.well-known/agent.json — add an alias so both work.
     a2a_app.router.add_route(
-        '/.well-known/agent.json',
+        "/.well-known/agent.json",
         a2a_app._agent_card_endpoint,
-        methods=['HEAD', 'GET', 'OPTIONS'],
+        methods=["HEAD", "GET", "OPTIONS"],
     )
 
     # Expose for lifespan.py to call worker.run() after broker channels are ready.

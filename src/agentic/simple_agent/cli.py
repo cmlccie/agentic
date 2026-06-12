@@ -8,7 +8,7 @@ from pathlib import Path
 import typer
 import uvicorn
 
-from agentic import logging as agentic_logging
+import agentic.logging
 
 from .config import CONFIG_DIR, SECRETS_DIR
 
@@ -31,7 +31,7 @@ def serve(
     Reads agent.yaml and server.yaml from config_dir. Secrets are read from
     secrets_dir on every reload cycle — no restart required for key rotation.
     """
-    agentic_logging.fancy(log_level.upper())
+    agentic.logging.fancy(log_level.upper())
 
     from .main import create_app
 
@@ -58,7 +58,7 @@ def web_chat(
     The web-chat server is separate from the serve process — run them on
     different ports if you need both simultaneously.
     """
-    agentic_logging.fancy(log_level.upper())
+    agentic.logging.fancy(log_level.upper())
 
     from .config.agent_spec import load_agent
     from .config.server_spec import AgentSecrets, load_server_spec
@@ -77,7 +77,7 @@ def chat(
     log_level: str = typer.Option("warning", help="Log level"),  # noqa: B008
 ) -> None:
     """Run an interactive terminal chat session with the configured agent."""
-    agentic_logging.fancy(log_level.upper())
+    agentic.logging.fancy(log_level.upper())
 
     from .config.agent_spec import load_agent
     from .config.server_spec import AgentSecrets, load_server_spec
