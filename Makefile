@@ -103,3 +103,32 @@ serve-network-subagents: tools-mcp-meraki-server agents-meraki-agent agents-thou
 
 serve-network-agent: ## Run the Network Troubleshooting Agent CLI for development
 	uv run agents/network_agent/network_agent.py cli
+
+# -------------------------------------------------------------------------------------------------
+# Terraform Module Targets
+# -------------------------------------------------------------------------------------------------
+
+.PHONY: tf-init tf-validate tf-fmt tf-fmt-check tf-docs
+
+tf-init: ## Initialize all Terraform modules and their examples
+	@for m in modules/*/; do \
+		terraform -chdir=$$m init -backend=false; \
+		terraform -chdir=$${m}examples/complete init -backend=false; \
+	done
+
+tf-validate: tf-init ## Validate all Terraform modules and their examples
+	@for m in modules/*/; do \
+		terraform -chdir=$$m validate; \
+		terraform -chdir=$${m}examples/complete validate; \
+	done
+
+tf-fmt: ## Format all Terraform files
+	terraform fmt -recursive modules/
+
+tf-fmt-check: ## Check Terraform formatting (no writes)
+	terraform fmt -recursive -check modules/
+
+tf-docs: ## Regenerate terraform-docs for all modules
+	@for m in modules/*/; do \
+		terraform-docs markdown table --output-file README.md --output-mode inject $$m; \
+	done
