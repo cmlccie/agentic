@@ -74,7 +74,7 @@ tools-mcp-weather-server: ## Build the MCP Weather Server
 	$(CONTAINER_ENGINE) build -f tools/mcp/weather_server/Containerfile -t agentic/tools-mcp-weather-server:local tools/mcp/weather_server/
 
 simple-agent: ## Build the Simple Agent
-	$(CONTAINER_ENGINE) build -f agents/simple_agent/Containerfile -t agentic/simple-agent:local agents/simple_agent/
+	$(CONTAINER_ENGINE) build -f images/simple_agent/Containerfile -t agentic/simple-agent:local images/simple_agent/
 
 agents-weather-agent: ## Build the Weather Agent
 	$(CONTAINER_ENGINE) build -f agents/weather_agent/Containerfile -t agentic/agents-weather-agent:local agents/weather_agent/

@@ -1,6 +1,6 @@
 # terraform-kubernetes-simple-agent
 
-Terraform module for deploying [simple-agent](../../agents/simple_agent) instances to Kubernetes.
+Terraform module for deploying [simple-agent](../../images/simple_agent) instances to Kubernetes.
 
 Rather than maintaining `agent.yaml`, `server.yaml`, and an optional system prompt inline in Kubernetes manifests, this module accepts file _paths_ as inputs and injects their contents into a ConfigMap at `terraform apply` time — keeping configuration as clean, version-controlled files alongside your infrastructure code.
 
