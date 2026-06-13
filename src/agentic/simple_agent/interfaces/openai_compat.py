@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from fastapi import APIRouter
@@ -14,6 +15,8 @@ from pydantic_ai.messages import (
 
 if TYPE_CHECKING:
     from ..lifespan import AppState
+
+_KEEPALIVE_INTERVAL = 30.0
 
 
 def _messages_to_history(messages: list[dict[str, Any]]) -> list:
@@ -71,9 +74,32 @@ def build_openai_router(app_state: AppState, model_name: str) -> APIRouter:
     async def _stream_response(
         agent, user_prompt: str, history
     ) -> AsyncGenerator[str, None]:  # type: ignore[return]
-        async with agent.run_stream(user_prompt, message_history=history) as result:
-            async for chunk in result.stream_text(delta=True):
-                yield chunk
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+        async def _produce() -> None:
+            try:
+                async with agent.run_stream(user_prompt, message_history=history) as result:
+                    async for chunk in result.stream_text(delta=True):
+                        await queue.put(chunk)
+            finally:
+                await queue.put(None)
+
+        task = asyncio.create_task(_produce())
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_INTERVAL)
+                    if item is None:
+                        break
+                    yield item
+                except asyncio.TimeoutError:
+                    yield ""  # keep connection alive during tool calls / LLM thinking
+        finally:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     return create_chat_completion_router(
         list_models=lambda: [model_name],
