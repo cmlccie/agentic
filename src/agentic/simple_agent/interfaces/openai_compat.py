@@ -74,13 +74,20 @@ def build_openai_router(app_state: AppState, model_name: str) -> APIRouter:
     async def _stream_response(
         agent, user_prompt: str, history
     ) -> AsyncGenerator[str, None]:  # type: ignore[return]
+        # pydantic_ai 1.97.0 emits FinalResultEvent on the first TextPart in streaming
+        # mode, which causes thinking-text-first models (qwen3, etc.) to short-circuit
+        # before tool calls are executed. Use agent.run() (non-streaming) to ensure the
+        # full tool-calling pipeline completes, then yield the result as a single chunk.
+        # Empty keepalive chunks are sent every _KEEPALIVE_INTERVAL seconds to prevent
+        # Envoy's upstream idle timeout from closing the connection mid-run.
         queue: asyncio.Queue[str | None] = asyncio.Queue()
 
         async def _produce() -> None:
             try:
-                async with agent.run_stream(user_prompt, message_history=history) as result:
-                    async for chunk in result.stream_text(delta=True):
-                        await queue.put(chunk)
+                result = await agent.run(user_prompt, message_history=history)
+                await queue.put(result.output)
+            except Exception:
+                pass
             finally:
                 await queue.put(None)
 
