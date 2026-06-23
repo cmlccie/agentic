@@ -22,8 +22,10 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import (
     BasePushNotificationSender,
+    DatabaseTaskStore,
     InMemoryPushNotificationConfigStore,
     InMemoryTaskStore,
+    TaskStore,
     TaskUpdater,
 )
 from a2a.types import (
@@ -43,6 +45,8 @@ from agentic.runtime.config import BrokerBackend
 from ..graph import final_ai_text, message_to_text
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
     from agentic.runtime.config import AgentSecrets, ServerSpec
 
     from ..lifespan import AppState
@@ -173,6 +177,44 @@ class A2AInterface:
 
     routes: list[Route]
     push_httpx_client: httpx.AsyncClient
+    task_store_engine: AsyncEngine | None = None
+
+
+def _build_task_store(
+    server_spec: ServerSpec, secrets: AgentSecrets
+) -> tuple[TaskStore, AsyncEngine | None]:
+    """Build the A2A task store from the configured broker backend.
+
+    - ``memory`` — in-process store (single replica, ephemeral).
+    - ``postgres`` — persistent SQL store via the a2a-sdk DatabaseTaskStore,
+      backed by a SQLAlchemy async engine built from the ``agent_database_url``
+      secret (e.g. ``postgresql+asyncpg://user:pass@host:5432/dbname``). Suitable
+      for multi-replica deployments; the tasks table is created on first use.
+    - ``redis`` — not supported by the a2a-sdk store; warns and falls back to
+      in-memory. Use ``postgres`` for persistence.
+    """
+    backend = server_spec.broker.backend
+    if backend == BrokerBackend.POSTGRES:
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        dsn = secrets.agent_database_url
+        if not dsn:
+            raise RuntimeError(
+                "broker.backend: postgres requires the secret file "
+                "'agent_database_url' (e.g. "
+                "postgresql+asyncpg://user:pass@host:5432/dbname)"
+            )
+        engine = create_async_engine(dsn)
+        log.info("a2a: using PostgreSQL DatabaseTaskStore for task persistence")
+        return DatabaseTaskStore(engine, create_table=True), engine
+
+    if backend == BrokerBackend.REDIS:
+        log.warning(
+            "a2a: broker.backend=redis is not supported for the orchestrator A2A "
+            "task store; use 'postgres' for persistence — falling back to in-memory"
+        )
+
+    return InMemoryTaskStore(), None
 
 
 def build_a2a_interface(
@@ -184,15 +226,7 @@ def build_a2a_interface(
     """Build the A2A request handler and Starlette routes mounted under /a2a."""
     card = build_agent_card(server_spec, agent_url)
 
-    if server_spec.broker.backend == BrokerBackend.REDIS:
-        # a2a-sdk persistent task storage uses a SQL DatabaseTaskStore; a Redis
-        # store is not provided. Fall back to in-memory and warn so single-replica
-        # deployments still work and multi-replica setups know to add persistence.
-        log.warning(
-            "a2a: broker.backend=redis is not yet supported for the orchestrator "
-            "A2A task store; falling back to in-memory storage"
-        )
-    task_store = InMemoryTaskStore()
+    task_store, task_store_engine = _build_task_store(server_spec, secrets)
 
     push_config_store = InMemoryPushNotificationConfigStore()
     push_httpx_client = httpx.AsyncClient(timeout=_PUSH_TIMEOUT)
@@ -218,4 +252,8 @@ def build_a2a_interface(
         create_agent_card_routes(card, card_url=f"{_A2A_PREFIX}/.well-known/agent.json")
     )
 
-    return A2AInterface(routes=routes, push_httpx_client=push_httpx_client)
+    return A2AInterface(
+        routes=routes,
+        push_httpx_client=push_httpx_client,
+        task_store_engine=task_store_engine,
+    )

@@ -20,7 +20,10 @@ agent_card:
   #     output_modes: [text/plain]
 
 broker:
-  backend: memory  # "memory" only — Redis-backed A2A task storage is not yet supported
+  backend: memory  # "memory" | "postgres"
+  # postgres persists A2A tasks via a SQL DatabaseTaskStore (multi-replica safe).
+  # Requires the secret file: agent_database_url
+  #   postgresql+asyncpg://user:password@postgres-host:5432/orchestrator
 
 interfaces:
   a2a: true

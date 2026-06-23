@@ -161,7 +161,7 @@ agent_card:
   skills: []
 
 broker:
-  backend: memory   # "memory" only (see note below)
+  backend: memory   # "memory" | "postgres"
 
 interfaces:
   a2a: true
@@ -171,10 +171,15 @@ reload:
   drain_timeout: 30  # seconds to drain in-flight requests before forcing reload
 ```
 
-> **Note on `broker.backend`:** The orchestrator's A2A task store is currently
-> in-memory only. The field is retained for parity with the simple-agent; setting
-> `redis` logs a warning and falls back to in-memory. Multi-replica persistent task
-> storage (a SQL `DatabaseTaskStore`) is a planned enhancement.
+> **`broker.backend`:**
+> - `memory` (default) — in-process A2A task store; ephemeral, single-replica.
+> - `postgres` — persistent SQL task store (a2a-sdk `DatabaseTaskStore`) suitable
+>   for multi-replica deployments. Requires the `agent_database_url` secret
+>   (`postgresql+asyncpg://user:pass@host:5432/dbname`); the `tasks` table is
+>   created automatically on first use.
+>
+> `redis` is not supported for the orchestrator's A2A task store (the a2a-sdk
+> store is SQL-based); it warns and falls back to in-memory — use `postgres`.
 
 ### Secrets reference
 

@@ -81,6 +81,7 @@ def create_app(
     if server_spec.interfaces.a2a:
         a2a_interface = build_a2a_interface(_state, server_spec, secrets, agent_url)
         _state.push_httpx_client = a2a_interface.push_httpx_client
+        _state.task_store_engine = a2a_interface.task_store_engine
         app.router.routes.extend(a2a_interface.routes)
 
     if server_spec.interfaces.openai_compat:

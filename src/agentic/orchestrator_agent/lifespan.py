@@ -49,6 +49,7 @@ class AppState:
     config_dir: Path = field(default=CONFIG_DIR)
     secrets_dir: Path = field(default=SECRETS_DIR)
     push_httpx_client: Any = field(default=None)
+    task_store_engine: Any = field(default=None)
 
 
 async def _run_reload_loop(app: FastAPI) -> None:
@@ -140,6 +141,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await state.push_httpx_client.aclose()
             except Exception as exc:
                 log.error("lifespan: error closing push httpx client: %s", exc)
+
+        if state.task_store_engine is not None:
+            try:
+                await state.task_store_engine.dispose()
+            except Exception as exc:
+                log.error("lifespan: error disposing task store engine: %s", exc)
 
         await asyncio.gather(
             reload_task,

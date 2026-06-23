@@ -29,6 +29,7 @@ _SECRET_REF_PATTERN = re.compile(r"\$\{([^}]+)\}")
 class BrokerBackend(StrEnum):
     MEMORY = "memory"
     REDIS = "redis"
+    POSTGRES = "postgres"
 
 
 class SkillConfig(BaseModel):
@@ -121,6 +122,13 @@ class AgentSecrets:
     @property
     def agent_redis_url(self) -> str:
         return self._read("agent_redis_url", default="redis://localhost:6379/0")  # type: ignore[return-value]
+
+    @property
+    def agent_database_url(self) -> str | None:
+        """SQLAlchemy async DSN for the A2A task store, e.g.
+        ``postgresql+asyncpg://user:pass@host:5432/dbname``.
+        """
+        return self._read("agent_database_url")
 
     def get(self, key: str) -> str | None:
         """Generic accessor for arbitrary secret keys (e.g. MCP tokens, A2A tokens)."""
