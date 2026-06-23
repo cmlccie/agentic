@@ -8,7 +8,7 @@ Agentic architecture components for building Agentic AI systems (models, agents,
 
 ## Instruction Files
 
-The following instruction files apply automatically to specific file types. Read them before modifying matching files.
+The following instruction files apply automatically to specific file types. Before making any changes to a file that matches the patterns below, read the corresponding instruction file if you have not already done so in this session. If a referenced instruction file cannot be read (e.g., it does not exist), stop and notify the user before proceeding with any changes.
 
 | File                                                    | Applies To                | Description                      |
 | ------------------------------------------------------- | ------------------------- | -------------------------------- |
@@ -80,12 +80,12 @@ Each tool server uses `fastmcp.FastMCP` via `from fastmcp import FastMCP` and ex
 - **uv** for all dependency management; `uv.lock` is committed.
 - **Hatchling** build backend; wheel packages `src/agentic`.
 - Scripts must have `#!/usr/bin/env python3` shebang and be executable.
-- Each component in `tools/` and `images/` must be containerized (own `Containerfile`) and have a `README.md` with usage instructions.
-- Python dependencies are managed centrally in `pyproject.toml`; each containerized component's `requirements.txt` is generated via `uv export`.
+- Each component in `tools/` and `images/` must have a `Containerfile` and a `README.md` that includes at minimum: a one-paragraph description, build instructions, and at least one usage example.
+- Python dependencies are managed centrally in `pyproject.toml`; each containerized component's `requirements.txt` is generated via `uv export`. After modifying `pyproject.toml`, regenerate each affected component's `requirements.txt` by running `uv export --frozen --no-dev -o <component>/requirements.txt` and commit it alongside the `pyproject.toml` change.
 
 ### Style
 
-- All items in a list must be consistently structured — either all simple phrases or all complete sentences.
+- All items in a list must be consistently structured — either all simple phrases or all complete sentences. A list item is a complete sentence if it contains a finite verb and could stand alone as a sentence; otherwise it is a simple phrase.
 - When a list contains sentences, each sentence ends with a period.
 - When a list contains simple phrases, do not use periods.
 - Maintain parallel structure across all items in the same list.
