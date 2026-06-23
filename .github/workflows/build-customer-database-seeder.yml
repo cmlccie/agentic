@@ -1,0 +1,38 @@
+name: Build Customer Database Seeder
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-customer-database-seeder.yml"
+      - "images/customer_database_seeder/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reusable-build-python-container-image.yml"
+      - ".github/workflows/build-customer-database-seeder.yml"
+      - "images/customer_database_seeder/**"
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["Build Python Base Image"]
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build-python-container-image.yml
+    with:
+      image-name: customer-database-seeder
+      context-path: ./images/customer_database_seeder

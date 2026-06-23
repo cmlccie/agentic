@@ -1,0 +1,17 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="MCP Customer Database Server"
+LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) server that provides read-only SQL access to the customer database."
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/tools/mcp/customer_database_server/README.md"
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+COPY customer_database_server.py README.md ./
+RUN chmod +x customer_database_server.py
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port 8000 for HTTP transport
+EXPOSE 8000
+
+ENTRYPOINT ["/app/customer_database_server.py"]
+CMD ["stdio"]

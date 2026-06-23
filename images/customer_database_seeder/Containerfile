@@ -1,0 +1,16 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="Customer Database Seeder"
+LABEL org.opencontainers.image.description="Initializes and continuously maintains a small, active demo dataset in the customer PostgreSQL database."
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/images/customer_database_seeder/README.md"
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+# faker is only needed by the seeder; pg8000 comes from the base image.
+RUN pip install --no-cache-dir faker
+
+COPY seed.py ./
+RUN chmod +x seed.py
+RUN chown -R appuser:appuser /app
+USER appuser
+
+ENTRYPOINT ["python", "/app/seed.py"]
