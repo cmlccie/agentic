@@ -11,14 +11,15 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic_ai import Agent
 
-from .config import CONFIG_DIR, SECRETS_DIR
-from .config.agent_spec import load_agent
-from .config.server_spec import AgentSecrets, ServerSpec, load_server_spec
-from .reload import (
+from agentic.runtime.config import AgentSecrets, ServerSpec, load_server_spec
+from agentic.runtime.reload import (
     ReloadCoordinator,
     install_sighup_handler,
     watch_config_directory,
 )
+
+from .config import CONFIG_DIR, SECRETS_DIR
+from .config.agent_spec import load_agent
 
 log = logging.getLogger(__name__)
 

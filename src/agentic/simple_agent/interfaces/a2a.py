@@ -11,7 +11,7 @@ from fasta2a.storage import InMemoryStorage
 from pydantic_ai import Agent
 
 if TYPE_CHECKING:
-    from ..config.server_spec import AgentSecrets, ServerSpec
+    from agentic.runtime.config import AgentSecrets, ServerSpec
 
 log = logging.getLogger(__name__)
 

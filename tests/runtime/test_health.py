@@ -1,12 +1,12 @@
-"""Tests for agentic.simple_agent.health."""
+"""Tests for agentic.runtime.health."""
 
 from unittest.mock import MagicMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agentic.simple_agent.health import router
-from agentic.simple_agent.reload import AgentState, ReloadCoordinator
+from agentic.runtime.health import router
+from agentic.runtime.reload import AgentState, ReloadCoordinator
 
 # -------------------------------------------------------------------------------------------------
 # Fixtures

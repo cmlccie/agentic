@@ -1,0 +1,30 @@
+agent_card:
+  display_name: "Orchestrator Agent"
+  description: "An orchestrator that delegates tasks across specialist A2A agents, with OpenAI-compatible and A2A interfaces."
+  version: "1.0.0"
+  icon_url: ""
+  documentation_url: ""
+  provider:
+    organization: ""
+    url: ""
+  skills: []
+  # Example skill entry:
+  # skills:
+  #   - id: orchestration
+  #     name: Task Orchestration
+  #     description: Coordinates specialist agents to fulfill multi-step requests.
+  #     tags: [orchestration, routing]
+  #     examples:
+  #       - "Plan a trip and check the weather for each stop"
+  #     input_modes: [text/plain]
+  #     output_modes: [text/plain]
+
+broker:
+  backend: memory  # "memory" only — Redis-backed A2A task storage is not yet supported
+
+interfaces:
+  a2a: true
+  openai_compat: true
+
+reload:
+  drain_timeout: 30  # seconds to wait for in-flight tasks before forcing reload

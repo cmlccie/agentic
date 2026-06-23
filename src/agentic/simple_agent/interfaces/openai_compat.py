@@ -95,7 +95,9 @@ def build_openai_router(app_state: AppState, model_name: str) -> APIRouter:
         try:
             while True:
                 try:
-                    item = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_INTERVAL)
+                    item = await asyncio.wait_for(
+                        queue.get(), timeout=_KEEPALIVE_INTERVAL
+                    )
                     if item is None:
                         break
                     yield item

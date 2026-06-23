@@ -12,8 +12,8 @@ from agentic.runtime.health import router as health_router
 from agentic.runtime.reload import ReloadCoordinator
 
 from .config import CONFIG_DIR, SECRETS_DIR
-from .config.agent_spec import load_agent
-from .interfaces.a2a import build_a2a_app
+from .config.agent_spec import load_orchestrator_spec
+from .interfaces.a2a import build_a2a_interface
 from .interfaces.openai_compat import build_openai_router
 from .lifespan import AppState, lifespan
 
@@ -27,19 +27,21 @@ def create_app(
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
-    Loads config from disk, wires all interfaces, and installs the reload gate
-    middleware. Exposed as a factory so tests can inject alternate config paths.
+    Loads config from disk and wires all interfaces. The LangGraph supervisor
+    graph itself is built during the lifespan startup (it fetches downstream
+    agent cards over the network), then rebuilt on each reload.
     """
     secrets = AgentSecrets(secrets_dir)
     server_spec = load_server_spec(config_dir / "server.yaml")
-    agent = load_agent(config_dir / "agent.yaml", secrets)
+    spec = load_orchestrator_spec(config_dir / "agent.yaml")
     coordinator = ReloadCoordinator(drain_timeout=server_spec.reload.drain_timeout)
 
     _state = AppState(
         coordinator=coordinator,
         secrets=secrets,
-        agent=agent,
+        spec=spec,
         server_spec=server_spec,
+        graph=None,
         config_dir=config_dir,
         secrets_dir=secrets_dir,
     )
@@ -77,12 +79,12 @@ def create_app(
     app.include_router(health_router)
 
     if server_spec.interfaces.a2a:
-        a2a_app = build_a2a_app(agent, server_spec, secrets, agent_url=agent_url)
-        _state.a2a_app = a2a_app
-        app.mount("/a2a", a2a_app)
+        a2a_interface = build_a2a_interface(_state, server_spec, secrets, agent_url)
+        _state.push_httpx_client = a2a_interface.push_httpx_client
+        app.router.routes.extend(a2a_interface.routes)
 
     if server_spec.interfaces.openai_compat:
-        model_name = agent.name or server_spec.agent_card.display_name
+        model_name = spec.name or server_spec.agent_card.display_name
         openai_router = build_openai_router(_state, model_name=model_name)
         app.include_router(openai_router)
 

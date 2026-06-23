@@ -135,7 +135,10 @@ async def watch_config_directory(
 def install_sighup_handler(coordinator: ReloadCoordinator) -> None:
     """Install SIGHUP handler for operator-triggered reload.
 
-    Uses loop.add_signal_handler for async-safe delivery.
+    Uses loop.add_signal_handler for async-safe delivery. Signal handlers can
+    only be installed on the main thread of the main interpreter; when running
+    off the main thread (e.g. under a test client) or on a platform without
+    SIGHUP, this degrades to a no-op with a warning rather than failing startup.
     """
     loop = asyncio.get_event_loop()
 
@@ -143,5 +146,12 @@ def install_sighup_handler(coordinator: ReloadCoordinator) -> None:
         log.info("sighup: received SIGHUP, triggering reload")
         coordinator.trigger_reload()
 
-    loop.add_signal_handler(signal.SIGHUP, _handle_sighup)
-    log.info("sighup: handler installed")
+    try:
+        loop.add_signal_handler(signal.SIGHUP, _handle_sighup)
+        log.info("sighup: handler installed")
+    except (RuntimeError, NotImplementedError, ValueError, AttributeError) as exc:
+        log.warning(
+            "sighup: could not install handler (%s); SIGHUP-triggered reload "
+            "disabled (config/secret file watching still active)",
+            exc,
+        )

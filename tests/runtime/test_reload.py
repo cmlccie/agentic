@@ -1,8 +1,8 @@
-"""Tests for agentic.simple_agent.reload."""
+"""Tests for agentic.runtime.reload."""
 
 import asyncio
 
-from agentic.simple_agent.reload import AgentState, ReloadCoordinator
+from agentic.runtime.reload import AgentState, ReloadCoordinator
 
 # -------------------------------------------------------------------------------------------------
 # AgentState

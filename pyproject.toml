@@ -10,6 +10,10 @@ dependencies = [
     "fastapi-openai-compat>=1.2.0",
     "fastmcp>=2.13.3",
     "httpx>=0.28.1",
+    "langchain>=1.0",
+    "langchain-anthropic>=1.0",
+    "langchain-openai>=1.0",
+    "langgraph>=1.0",
     "mcp[cli]>=1.21.0",
     "openai>=2.9.0",
     "opentelemetry-api>=1.38.0",
@@ -52,6 +56,7 @@ packages = ["src/agentic"]
 
 [project.scripts]
 simple-agent = "agentic.simple_agent.cli:app"
+orchestrator-agent = "agentic.orchestrator_agent.cli:app"
 
 # --------------------------------------------------------------------------------------
 # Dependency Sources

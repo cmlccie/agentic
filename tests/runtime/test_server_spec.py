@@ -1,11 +1,11 @@
-"""Tests for agentic.simple_agent.config.server_spec."""
+"""Tests for agentic.runtime.config."""
 
 from pathlib import Path
 
 import pytest
 import yaml
 
-from agentic.simple_agent.config.server_spec import (
+from agentic.runtime.config import (
     AgentSecrets,
     BrokerBackend,
     ProviderConfig,

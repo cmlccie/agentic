@@ -2,38 +2,15 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from pathlib import Path
 
 import yaml
 from pydantic_ai import Agent, AgentSpec
 
-from .server_spec import AgentSecrets
+from agentic.runtime.config import AgentSecrets
+from agentic.runtime.config import expand_secret_refs as _expand_secret_refs
 
 log = logging.getLogger(__name__)
-
-_SECRET_REF_PATTERN = re.compile(r"\$\{([^}]+)\}")
-
-
-def _expand_secret_refs(value: str, secrets: AgentSecrets) -> str:
-    """Expand ${SECRET_KEY} patterns using file-based secrets.
-
-    Key is lowercased to match Kubernetes Secret key naming.
-    Falls back to os.environ for local dev convenience.
-    """
-
-    def _resolve(m: re.Match) -> str:
-        key = m.group(1).lower()
-        val = secrets.get(key)
-        if val is not None:
-            return val
-        env_val = os.environ.get(m.group(1))
-        if env_val is not None:
-            return env_val
-        log.warning("secret ref ${%s} not resolved — leaving as-is", m.group(1))
-        return m.group(0)
-
-    return _SECRET_REF_PATTERN.sub(_resolve, value)
 
 
 def _expand_headers_in_spec(spec_dict: dict, secrets: AgentSecrets) -> dict:

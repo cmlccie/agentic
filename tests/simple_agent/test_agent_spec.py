@@ -4,11 +4,11 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+from agentic.runtime.config import AgentSecrets
 from agentic.simple_agent.config.agent_spec import (
     _expand_headers_in_spec,
     _expand_secret_refs,
 )
-from agentic.simple_agent.config.server_spec import AgentSecrets
 
 # -------------------------------------------------------------------------------------------------
 # Helpers

@@ -1,0 +1,34 @@
+name: orchestrator-agent
+description: "An orchestrator that delegates tasks across specialist A2A agents"
+
+# Use "openai-compat" sentinel for custom OpenAI-compatible providers (e.g. LM Studio).
+# Requires secret files: agent_model_base_url and agent_model_api_key.
+# For first-class providers (Anthropic, OpenAI), use the native model string:
+#   model: anthropic:claude-sonnet-4-6
+#   model: openai:gpt-4o
+model: openai-compat
+model_id: local-model
+
+instructions: |
+  You are an orchestrator that coordinates a team of specialist agents.
+
+  Each specialist agent is available to you as a tool. Read the user's request,
+  decide which agent(s) can fulfill it, and delegate by calling the appropriate
+  tool(s) — you may call several agents to complete a single request. Provide
+  each agent a complete, self-contained instruction; they do not share this
+  conversation's context. Synthesize the agents' responses into a single,
+  coherent answer for the user. If no specialist agent fits, answer directly.
+
+model_settings:
+  temperature: 0.2
+  max_tokens: 4096
+
+# Downstream A2A agents to orchestrate. Each agent's card is fetched at startup
+# (and on every reload) to derive its delegation tool name and description.
+# Header values may reference secret files via ${SECRET_KEY}.
+a2a_servers: []
+# a2a_servers:
+#   - url: http://weather-agent/a2a
+#     headers:
+#       Authorization: "Bearer ${WEATHER_AGENT_TOKEN}"
+#   - url: http://network-agent/a2a

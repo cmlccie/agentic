@@ -1,15 +1,29 @@
+"""Shared configuration: server spec models and file-based secrets.
+
+`server.yaml` describes the agent card, A2A task broker backend, enabled
+interfaces, and reload behavior — all framework-agnostic and identical between
+the simple-agent and orchestrator-agent runtimes. Secrets are read from files
+(Kubernetes Secret volume) on every access so rotated values are picked up
+without a process restart.
+"""
+
 from __future__ import annotations
 
 import logging
+import os
+import re
 from enum import StrEnum
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field
 
-from . import SECRETS_DIR
+CONFIG_DIR = Path("/etc/agent/config")
+SECRETS_DIR = Path("/etc/agent/secrets")
 
 log = logging.getLogger(__name__)
+
+_SECRET_REF_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 
 class BrokerBackend(StrEnum):
@@ -109,10 +123,31 @@ class AgentSecrets:
         return self._read("agent_redis_url", default="redis://localhost:6379/0")  # type: ignore[return-value]
 
     def get(self, key: str) -> str | None:
-        """Generic accessor for arbitrary secret keys (e.g. MCP tokens)."""
+        """Generic accessor for arbitrary secret keys (e.g. MCP tokens, A2A tokens)."""
         return self._read(key)
 
 
 def load_server_spec(path: Path) -> ServerSpec:
     raw = yaml.safe_load(path.read_text())
     return ServerSpec.model_validate(raw)
+
+
+def expand_secret_refs(value: str, secrets: AgentSecrets) -> str:
+    """Expand ${SECRET_KEY} patterns using file-based secrets.
+
+    Key is lowercased to match Kubernetes Secret key naming.
+    Falls back to os.environ for local dev convenience.
+    """
+
+    def _resolve(m: re.Match) -> str:
+        key = m.group(1).lower()
+        val = secrets.get(key)
+        if val is not None:
+            return val
+        env_val = os.environ.get(m.group(1))
+        if env_val is not None:
+            return env_val
+        log.warning("secret ref ${%s} not resolved — leaving as-is", m.group(1))
+        return m.group(0)
+
+    return _SECRET_REF_PATTERN.sub(_resolve, value)
