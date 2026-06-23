@@ -215,7 +215,9 @@ class LocationInfo(BaseModel):
     name: str = Field(..., description="Name of the location.")
     latitude: float = Field(..., description="Latitude of the location.")
     longitude: float = Field(..., description="Longitude of the location.")
-    elevation: Optional[float] = Field(None, description="Elevation of the location in meters.")
+    elevation: Optional[float] = Field(
+        None, description="Elevation of the location in meters."
+    )
 
     timezone: str = Field(..., description="Timezone of the location.")
 
