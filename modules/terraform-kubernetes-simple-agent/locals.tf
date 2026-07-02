@@ -41,7 +41,25 @@ locals {
     } : k => v if v != null
   }
   all_secrets = merge(local.named_secrets, var.secrets.additional)
-  has_secrets = length(local.all_secrets) > 0
+
+  # has_secrets drives a resource `count` and two `dynamic` block for_each expressions
+  # (secret.tf, deployment.tf), both of which require a value known at plan time.
+  # It must NOT be derived from length(all_secrets) once litellm_integration is enabled,
+  # because that map then contains litellm_key.agent[0].key -- an attribute that doesn't
+  # exist until this same apply creates it, making the map's length unknown during plan
+  # ("Invalid count argument"). Whether a secret will be present is knowable statically
+  # from the inputs alone; only the agent_model_api_key *value* is unknown, not whether
+  # the key is present -- so compute presence from the same predicates, none of which
+  # touch a resource attribute.
+  has_secrets = (
+    var.secrets.anthropic_api_key != null ||
+    var.secrets.openai_api_key != null ||
+    var.secrets.agent_model_base_url != null ||
+    var.litellm_integration.enabled ||
+    var.secrets.agent_model_api_key != null ||
+    var.secrets.agent_redis_url != null ||
+    length(var.secrets.additional) > 0
+  )
 
   # Container image and CLI args.
   image = "${var.deployment.image}:${var.deployment.image_tag}"
