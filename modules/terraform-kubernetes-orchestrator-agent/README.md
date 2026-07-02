@@ -2,7 +2,7 @@
 
 Terraform module for deploying [orchestrator-agent](../../images/orchestrator_agent) instances to Kubernetes.
 
-The orchestrator is a LangGraph supervisor that delegates tasks across a team of downstream Agent2Agent (A2A) agents, exposing OpenAI-compatible (`/v1/`) and A2A (`/a2a/`) interfaces. Like the [simple-agent module](../terraform-kubernetes-simple-agent), this module accepts file _paths_ as inputs and injects their contents into a ConfigMap at `terraform apply` time — keeping configuration as clean, version-controlled files alongside your infrastructure code. The list of downstream A2A servers lives in `agent.yaml` (`a2a_servers`).
+The orchestrator is a LangGraph supervisor that delegates tasks across a team of downstream Agent2Agent (A2A) agents, exposing OpenAI-compatible (`/v1/`) and A2A (`/a2a/`) interfaces. Like the simple-agent module (deployed from the `home-cluster` repo's `modules/simple-agent`), this module accepts file _paths_ as inputs and injects their contents into a ConfigMap at `terraform apply` time — keeping configuration as clean, version-controlled files alongside your infrastructure code. The list of downstream A2A servers lives in `agent.yaml` (`a2a_servers`).
 
 ## Pre-requisites
 
