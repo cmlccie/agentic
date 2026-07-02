@@ -90,7 +90,7 @@ variable "ingress" {
 }
 
 variable "litellm_integration" {
-  description = "Optional LiteLLM registration. When enabled, the module creates a litellm_key (outbound auth for this agent's own calls to LiteLLM) and a litellm_agent (A2A registration), and injects the generated key into the agent's Kubernetes Secret automatically. Agent card name/description are read from config_files.agent (no separate input needed)."
+  description = "Optional LiteLLM registration. When enabled, the module creates a litellm_key (outbound auth for this agent's own calls to LiteLLM) and a litellm_agent (A2A registration), and injects the generated key into the agent's Kubernetes Secret automatically. Agent card fields (name, description, provider organization/url) are read from config_files.agent, falling back to generic defaults when not present -- no separate input needed."
   type = object({
     enabled = optional(bool, false)
     models  = optional(list(string), ["agent-model"])

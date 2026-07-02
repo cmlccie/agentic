@@ -30,8 +30,8 @@ resource "litellm_agent" "agent" {
     capabilities {}
 
     provider {
-      organization = "LiteLLM Proxy"
-      url          = "http://models.lab.lunsford.io"
+      organization = try(local.agent_config.provider.organization, "Agentic")
+      url          = try(local.agent_config.provider.url, "https://github.com/cmlccie/agentic")
     }
 
     skills {
