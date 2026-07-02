@@ -28,7 +28,11 @@ resource "litellm_agent" "agent" {
     protocol_version = "1.0"
 
     capabilities {}
-    provider {}
+
+    provider {
+      organization = "LiteLLM Proxy"
+      url          = "http://models.lab.lunsford.io"
+    }
 
     skills {
       id          = var.name
