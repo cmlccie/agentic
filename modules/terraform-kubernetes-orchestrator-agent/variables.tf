@@ -29,18 +29,30 @@ variable "config_files" {
   })
 }
 
-variable "secrets" {
-  description = "Orchestrator secrets mounted as files at /etc/agent/secrets/. Only non-null values are written to the Kubernetes Secret. Use 'additional' for downstream A2A bearer tokens referenced as $${SECRET_KEY} in agent.yaml headers."
-  sensitive   = true
+variable "openai_compatible" {
+  description = "Custom OpenAI-compatible model endpoint, used only when the orchestrator's model is set to openai-compat. Set only via terragrunt inputs -- both attributes must come from the same source, never split with secrets.auto.tfvars."
   type = object({
-    anthropic_api_key    = optional(string)
-    openai_api_key       = optional(string)
-    agent_model_base_url = optional(string)
-    agent_model_api_key  = optional(string)
-    agent_database_url   = optional(string)
-    additional           = optional(map(string), {})
+    base_url = optional(string)
+    api_key  = optional(string)
   })
-  default = {}
+  default   = {}
+  sensitive = true
+}
+
+variable "task_broker" {
+  description = "A2A task broker/storage backend config. database_url set only via terragrunt inputs. Omit for in-memory (default) broker behavior."
+  type = object({
+    database_url = optional(string)
+  })
+  default   = {}
+  sensitive = true
+}
+
+variable "agent_secrets" {
+  description = "Static secrets with no dependency source (e.g. downstream A2A bearer tokens referenced as $${SECRET_KEY} in agent.yaml headers), keyed by the filename written under /etc/agent/secrets/. Set only via a co-located secrets.auto.tfvars file so values stay git-crypt encrypted at rest. Never put dependency-derived values here -- those belong in openai_compatible or task_broker."
+  type      = map(string)
+  default   = {}
+  sensitive = true
 }
 
 variable "deployment" {

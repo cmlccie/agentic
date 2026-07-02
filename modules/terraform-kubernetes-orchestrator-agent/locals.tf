@@ -26,17 +26,21 @@ locals {
     )
   ) : file(var.config_files.agent)
 
-  # Secret aggregation: filter out null named values, merge with additional map.
+  # Secret aggregation: filter out null named values, merge with agent_secrets map.
+  #
+  # Invariant: any single object-typed secrets variable must be sourced from exactly
+  # one layer -- all terragrunt `inputs`, or all `secrets.auto.tfvars`, never split
+  # across both (Terraform does not deep-merge object-typed variables across variable
+  # precedence levels). openai_compatible and task_broker are inputs-only; agent_secrets
+  # is the sole tfvars-only variable -- that's what keeps the two sources from colliding.
   named_secrets = {
     for k, v in {
-      anthropic_api_key    = var.secrets.anthropic_api_key
-      openai_api_key       = var.secrets.openai_api_key
-      agent_model_base_url = var.secrets.agent_model_base_url
-      agent_model_api_key  = var.secrets.agent_model_api_key
-      agent_database_url   = var.secrets.agent_database_url
+      "openai_compatible.base_url" = var.openai_compatible.base_url
+      "openai_compatible.api_key"  = var.openai_compatible.api_key
+      "task_broker.database_url"   = var.task_broker.database_url
     } : k => v if v != null
   }
-  all_secrets = merge(local.named_secrets, var.secrets.additional)
+  all_secrets = merge(local.named_secrets, var.agent_secrets)
   has_secrets = length(local.all_secrets) > 0
 
   # Container image and CLI args.

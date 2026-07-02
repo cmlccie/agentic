@@ -16,10 +16,10 @@ from agentic.orchestrator_agent.graph import (
 from agentic.runtime.config import AgentSecrets
 
 
-def _secrets(tmp_path: Path, **files: str) -> AgentSecrets:
+def _secrets(tmp_path: Path, files: dict[str, str] | None = None) -> AgentSecrets:
     d = tmp_path / "secrets"
     d.mkdir()
-    for name, value in files.items():
+    for name, value in (files or {}).items():
         (d / name).write_text(value)
     return AgentSecrets(d)
 
@@ -40,8 +40,10 @@ class TestBuildModel:
 
         secrets = _secrets(
             tmp_path,
-            agent_model_base_url="http://127.0.0.1:1234/v1",
-            agent_model_api_key="lm-studio",
+            {
+                "openai_compatible.base_url": "http://127.0.0.1:1234/v1",
+                "openai_compatible.api_key": "lm-studio",
+            },
         )
         spec = OrchestratorSpec(
             name="o",
@@ -105,8 +107,10 @@ class TestBuildGraph:
     def test_builds_with_no_tools(self, tmp_path):
         secrets = _secrets(
             tmp_path,
-            agent_model_base_url="http://127.0.0.1:1234/v1",
-            agent_model_api_key="lm-studio",
+            {
+                "openai_compatible.base_url": "http://127.0.0.1:1234/v1",
+                "openai_compatible.api_key": "lm-studio",
+            },
         )
         spec = OrchestratorSpec(
             name="o", model="openai-compat", model_id="m", a2a_servers=[]

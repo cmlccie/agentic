@@ -18,10 +18,10 @@ def _spec(backend: str) -> ServerSpec:
     )
 
 
-def _secrets(tmp_path: Path, **files: str) -> AgentSecrets:
+def _secrets(tmp_path: Path, files: dict[str, str] | None = None) -> AgentSecrets:
     d = tmp_path / "secrets"
     d.mkdir()
-    for name, value in files.items():
+    for name, value in (files or {}).items():
         (d / name).write_text(value)
     return AgentSecrets(d)
 
@@ -38,13 +38,13 @@ class TestBuildTaskStore:
         assert engine is None
 
     def test_postgres_requires_database_url(self, tmp_path):
-        with pytest.raises(RuntimeError, match="agent_database_url"):
+        with pytest.raises(RuntimeError, match="task_broker.database_url"):
             _build_task_store(_spec("postgres"), _secrets(tmp_path))
 
     def test_postgres_builds_database_store(self, tmp_path):
         secrets = _secrets(
             tmp_path,
-            agent_database_url="postgresql+asyncpg://u:p@localhost:5432/db",
+            {"task_broker.database_url": "postgresql+asyncpg://u:p@localhost:5432/db"},
         )
         store, engine = _build_task_store(_spec("postgres"), secrets)
         assert isinstance(store, DatabaseTaskStore)

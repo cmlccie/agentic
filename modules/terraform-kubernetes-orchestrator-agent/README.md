@@ -48,14 +48,18 @@ module "orchestrator_agent" {
     instructions = "${path.module}/config/instructions.md"
   }
 
-  secrets = {
-    anthropic_api_key  = var.anthropic_api_key
-    agent_database_url = var.agent_database_url # postgresql+asyncpg://user:pass@host:5432/db
+  openai_compatible = {
+    base_url = var.openai_compatible_base_url
+    api_key  = var.openai_compatible_api_key
+  }
 
-    # Referenced as ${WEATHER_AGENT_TOKEN} in agent.yaml a2a_servers[].headers.
-    additional = {
-      weather_agent_token = var.weather_agent_token
-    }
+  task_broker = {
+    database_url = var.agent_database_url # postgresql+asyncpg://user:pass@host:5432/db
+  }
+
+  # Referenced as ${WEATHER_AGENT_TOKEN} in agent.yaml a2a_servers[].headers.
+  agent_secrets = {
+    weather_agent_token = var.weather_agent_token
   }
 
   deployment = {
@@ -93,11 +97,11 @@ a2a_servers:
   - url: http://network-agent.agents.svc.cluster.local/a2a
 ```
 
-Header values may reference secret files via `${SECRET_KEY}`. Provide those tokens via `secrets.additional` (the key is lowercased to match the mounted secret filename). Each agent's card is fetched at startup/reload to build its delegation tool; unreachable agents are skipped (degraded mode).
+Header values may reference secret files via `${SECRET_KEY}`. Provide those tokens via `agent_secrets` (the key is lowercased to match the mounted secret filename). Each agent's card is fetched at startup/reload to build its delegation tool; unreachable agents are skipped (degraded mode).
 
 ### PostgreSQL task persistence
 
-Set `broker.backend: postgres` in `server.yaml` and provide `secrets.agent_database_url` (a SQLAlchemy async DSN, e.g. `postgresql+asyncpg://user:pass@host:5432/dbname`) for a persistent, multi-replica-safe A2A task store. With the default `memory` backend the store is in-process and ephemeral.
+Set `broker.backend: postgres` in `server.yaml` and provide `task_broker.database_url` (a SQLAlchemy async DSN, e.g. `postgresql+asyncpg://user:pass@host:5432/dbname`) for a persistent, multi-replica-safe A2A task store. With the default `memory` backend the store is in-process and ephemeral.
 
 ### Instructions file injection
 

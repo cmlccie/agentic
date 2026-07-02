@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
@@ -77,6 +78,26 @@ class ServerSpec(BaseModel):
     reload: ReloadConfig = Field(default_factory=ReloadConfig)
 
 
+@dataclass
+class OpenAICompatible:
+    """Custom OpenAI-compatible model endpoint (e.g. LM Studio, vLLM, LiteLLM)."""
+
+    base_url: str | None
+    api_key: str | None
+
+
+@dataclass
+class TaskBroker:
+    """A2A task broker/storage backend config.
+
+    database_url is a SQLAlchemy async DSN, e.g.
+    ``postgresql+asyncpg://user:pass@host:5432/dbname``.
+    """
+
+    redis_url: str
+    database_url: str | None
+
+
 class AgentSecrets:
     """Reads secrets from files at /etc/agent/secrets/<key>.
 
@@ -104,31 +125,20 @@ class AgentSecrets:
         return val
 
     @property
-    def anthropic_api_key(self) -> str | None:
-        return self._read("anthropic_api_key")
+    def openai_compatible(self) -> OpenAICompatible:
+        return OpenAICompatible(
+            base_url=self._read("openai_compatible.base_url"),
+            api_key=self._read("openai_compatible.api_key"),
+        )
 
     @property
-    def openai_api_key(self) -> str | None:
-        return self._read("openai_api_key")
-
-    @property
-    def agent_model_base_url(self) -> str | None:
-        return self._read("agent_model_base_url")
-
-    @property
-    def agent_model_api_key(self) -> str | None:
-        return self._read("agent_model_api_key")
-
-    @property
-    def agent_redis_url(self) -> str:
-        return self._read("agent_redis_url", default="redis://localhost:6379/0")  # type: ignore[return-value]
-
-    @property
-    def agent_database_url(self) -> str | None:
-        """SQLAlchemy async DSN for the A2A task store, e.g.
-        ``postgresql+asyncpg://user:pass@host:5432/dbname``.
-        """
-        return self._read("agent_database_url")
+    def task_broker(self) -> TaskBroker:
+        return TaskBroker(
+            redis_url=self._read(
+                "task_broker.redis_url", default="redis://localhost:6379/0"
+            ),  # type: ignore[arg-type]
+            database_url=self._read("task_broker.database_url"),
+        )
 
     def get(self, key: str) -> str | None:
         """Generic accessor for arbitrary secret keys (e.g. MCP tokens, A2A tokens)."""

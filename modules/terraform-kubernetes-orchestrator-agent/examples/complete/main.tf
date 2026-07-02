@@ -14,17 +14,20 @@ module "orchestrator_agent" {
     instructions = "${path.module}/config/instructions.md"
   }
 
-  secrets = {
-    anthropic_api_key = var.anthropic_api_key
+  openai_compatible = {
+    base_url = var.openai_compatible_base_url
+    api_key  = var.openai_compatible_api_key
+  }
 
+  task_broker = {
     # Persist A2A tasks in PostgreSQL (set broker.backend: postgres in server.yaml).
-    agent_database_url = var.agent_database_url
+    database_url = var.agent_database_url
+  }
 
+  agent_secrets = {
     # Bearer tokens for downstream A2A agents, referenced as $${WEATHER_AGENT_TOKEN}
     # in the agent.yaml a2a_servers[].headers.
-    additional = {
-      weather_agent_token = var.weather_agent_token
-    }
+    weather_agent_token = var.weather_agent_token
   }
 
   deployment = {
@@ -53,8 +56,14 @@ module "orchestrator_agent" {
   }
 }
 
-variable "anthropic_api_key" {
-  description = "Anthropic API key."
+variable "openai_compatible_base_url" {
+  description = "Base URL of the OpenAI-compatible model endpoint (e.g. a LiteLLM proxy)."
+  type        = string
+  sensitive   = true
+}
+
+variable "openai_compatible_api_key" {
+  description = "API key for the OpenAI-compatible model endpoint."
   type        = string
   sensitive   = true
 }

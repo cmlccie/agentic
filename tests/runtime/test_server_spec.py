@@ -23,10 +23,10 @@ def _write_yaml(path: Path, data: dict) -> None:
     path.write_text(yaml.dump(data))
 
 
-def _secrets_dir(tmp_path: Path, **files: str) -> Path:
+def _secrets_dir(tmp_path: Path, files: dict[str, str] | None = None) -> Path:
     d = tmp_path / "secrets"
     d.mkdir()
-    for name, value in files.items():
+    for name, value in (files or {}).items():
         (d / name).write_text(value)
     return d
 
@@ -143,32 +143,53 @@ class TestLoadServerSpec:
 
 class TestAgentSecrets:
     def test_reads_existing_secret(self, tmp_path):
-        d = _secrets_dir(tmp_path, anthropic_api_key="sk-ant-test")
+        d = _secrets_dir(
+            tmp_path, {"openai_compatible.base_url": "http://127.0.0.1:1234/v1"}
+        )
         secrets = AgentSecrets(d)
-        assert secrets.anthropic_api_key == "sk-ant-test"
+        assert secrets.openai_compatible.base_url == "http://127.0.0.1:1234/v1"
 
     def test_returns_none_for_missing_secret(self, tmp_path):
         d = _secrets_dir(tmp_path)
         secrets = AgentSecrets(d)
-        assert secrets.anthropic_api_key is None
+        assert secrets.openai_compatible.base_url is None
+        assert secrets.openai_compatible.api_key is None
 
     def test_strips_trailing_whitespace(self, tmp_path):
-        d = _secrets_dir(tmp_path, openai_api_key="sk-test\n")
+        d = _secrets_dir(tmp_path, {"openai_compatible.api_key": "sk-test\n"})
         secrets = AgentSecrets(d)
-        assert secrets.openai_api_key == "sk-test"
+        assert secrets.openai_compatible.api_key == "sk-test"
 
-    def test_agent_redis_url_default(self, tmp_path):
+    def test_task_broker_redis_url_default(self, tmp_path):
         d = _secrets_dir(tmp_path)
         secrets = AgentSecrets(d)
-        assert secrets.agent_redis_url == "redis://localhost:6379/0"
+        assert secrets.task_broker.redis_url == "redis://localhost:6379/0"
 
-    def test_agent_redis_url_from_file(self, tmp_path):
-        d = _secrets_dir(tmp_path, agent_redis_url="redis://redis-host:6379/1")
+    def test_task_broker_redis_url_from_file(self, tmp_path):
+        d = _secrets_dir(
+            tmp_path, {"task_broker.redis_url": "redis://redis-host:6379/1"}
+        )
         secrets = AgentSecrets(d)
-        assert secrets.agent_redis_url == "redis://redis-host:6379/1"
+        assert secrets.task_broker.redis_url == "redis://redis-host:6379/1"
+
+    def test_task_broker_database_url_default_none(self, tmp_path):
+        d = _secrets_dir(tmp_path)
+        secrets = AgentSecrets(d)
+        assert secrets.task_broker.database_url is None
+
+    def test_task_broker_database_url_from_file(self, tmp_path):
+        d = _secrets_dir(
+            tmp_path,
+            {"task_broker.database_url": "postgresql+asyncpg://u:p@host:5432/db"},
+        )
+        secrets = AgentSecrets(d)
+        assert (
+            secrets.task_broker.database_url
+            == "postgresql+asyncpg://u:p@host:5432/db"
+        )
 
     def test_get_generic_key(self, tmp_path):
-        d = _secrets_dir(tmp_path, mcp_token="tok-abc")
+        d = _secrets_dir(tmp_path, {"mcp_token": "tok-abc"})
         secrets = AgentSecrets(d)
         assert secrets.get("mcp_token") == "tok-abc"
 
@@ -184,6 +205,6 @@ class TestAgentSecrets:
             secrets.require("nonexistent_key")
 
     def test_require_returns_value_when_present(self, tmp_path):
-        d = _secrets_dir(tmp_path, my_key="secret-value")
+        d = _secrets_dir(tmp_path, {"my_key": "secret-value"})
         secrets = AgentSecrets(d)
         assert secrets.require("my_key") == "secret-value"

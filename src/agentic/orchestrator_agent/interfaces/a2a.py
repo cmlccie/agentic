@@ -187,7 +187,7 @@ def _build_task_store(
 
     - ``memory`` — in-process store (single replica, ephemeral).
     - ``postgres`` — persistent SQL store via the a2a-sdk DatabaseTaskStore,
-      backed by a SQLAlchemy async engine built from the ``agent_database_url``
+      backed by a SQLAlchemy async engine built from the ``task_broker.database_url``
       secret (e.g. ``postgresql+asyncpg://user:pass@host:5432/dbname``). Suitable
       for multi-replica deployments; the tasks table is created on first use.
     - ``redis`` — not supported by the a2a-sdk store; warns and falls back to
@@ -197,11 +197,11 @@ def _build_task_store(
     if backend == BrokerBackend.POSTGRES:
         from sqlalchemy.ext.asyncio import create_async_engine
 
-        dsn = secrets.agent_database_url
+        dsn = secrets.task_broker.database_url
         if not dsn:
             raise RuntimeError(
                 "broker.backend: postgres requires the secret file "
-                "'agent_database_url' (e.g. "
+                "'task_broker.database_url' (e.g. "
                 "postgresql+asyncpg://user:pass@host:5432/dbname)"
             )
         engine = create_async_engine(dsn)

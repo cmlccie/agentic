@@ -114,11 +114,12 @@ kind: Secret
 metadata:
   name: my-agent-secrets
 stringData:
-  anthropic_api_key: "sk-ant-..." # file: /etc/agent/secrets/anthropic_api_key
   mcp_token_a: "tok-..." # file: /etc/agent/secrets/mcp_token_a
-  # agent_model_base_url: "http://..."  # only for openai-compat model
-  # agent_model_api_key: "..."          # only for openai-compat model
-  # agent_redis_url: "redis://..."      # only when broker.backend = redis
+  # openai_compatible.base_url: "http://..."  # only for openai-compat model
+  # openai_compatible.api_key: "..."          # only for openai-compat model
+  # task_broker.redis_url: "redis://..."      # only when broker.backend = redis
+  # First-class providers (anthropic:*, openai:*, ...) use the provider's
+  # standard environment variable on the container, not a secret file.
 ```
 
 > **Why files, not `envFrom`?** Environment variables are injected at pod start and never updated.
@@ -438,6 +439,18 @@ class ServerSpec(BaseModel):
     reload: ReloadConfig = Field(default_factory=ReloadConfig)
 
 
+@dataclass
+class OpenAICompatible:
+    base_url: str | None
+    api_key: str | None
+
+
+@dataclass
+class TaskBroker:
+    redis_url: str
+    database_url: str | None
+
+
 class AgentSecrets:
     """
     Reads secrets from files at /etc/agent/secrets/<key>.
@@ -465,24 +478,20 @@ class AgentSecrets:
         return val
 
     @property
-    def anthropic_api_key(self) -> str | None:
-        return self._read("anthropic_api_key")
+    def openai_compatible(self) -> OpenAICompatible:
+        return OpenAICompatible(
+            base_url=self._read("openai_compatible.base_url"),
+            api_key=self._read("openai_compatible.api_key"),
+        )
 
     @property
-    def openai_api_key(self) -> str | None:
-        return self._read("openai_api_key")
-
-    @property
-    def agent_model_base_url(self) -> str | None:
-        return self._read("agent_model_base_url")
-
-    @property
-    def agent_model_api_key(self) -> str | None:
-        return self._read("agent_model_api_key")
-
-    @property
-    def agent_redis_url(self) -> str:
-        return self._read("agent_redis_url", default="redis://localhost:6379/0")
+    def task_broker(self) -> TaskBroker:
+        return TaskBroker(
+            redis_url=self._read(
+                "task_broker.redis_url", default="redis://localhost:6379/0"
+            ),
+            database_url=self._read("task_broker.database_url"),
+        )
 
     def get(self, key: str) -> str | None:
         """Generic accessor for arbitrary secret keys (e.g. MCP tokens)."""
@@ -557,25 +566,21 @@ def load_agent(spec_path: Path, secrets: AgentSecrets) -> Agent:
     raw = yaml.safe_load(spec_path.read_text())
     raw = _expand_headers_in_spec(raw, secrets)
 
-    # Inject API keys into environment for pydantic-ai's own provider resolution.
-    # pydantic-ai reads ANTHROPIC_API_KEY, OPENAI_API_KEY, etc. from os.environ.
-    # We set them here from secret files so they're always current after a reload.
-    if key := secrets.anthropic_api_key:
-        os.environ["ANTHROPIC_API_KEY"] = key
-    if key := secrets.openai_api_key:
-        os.environ["OPENAI_API_KEY"] = key
+    # First-class providers (anthropic:*, openai:*, ...) resolve credentials via
+    # the provider integration's own environment-variable lookup -- not from a
+    # secret file.
 
     spec = AgentSpec.model_validate(raw)
 
     # Workaround for upstream #5471 — custom OpenAI-compatible endpoints
     model_override = None
     if raw.get("model") == "openai-compat":
-        base_url = secrets.agent_model_base_url
-        api_key = secrets.agent_model_api_key
+        base_url = secrets.openai_compatible.base_url
+        api_key = secrets.openai_compatible.api_key
         if not (base_url and api_key):
             raise RuntimeError(
                 "model: openai-compat requires secret files "
-                "'agent_model_base_url' and 'agent_model_api_key'"
+                "'openai_compatible.base_url' and 'openai_compatible.api_key'"
             )
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
@@ -644,7 +649,7 @@ def _build_a2a_backends(spec: ServerSpec, secrets: AgentSecrets):
             "broker.backend = redis requires fasta2a[redis] and redis packages"
         ) from e
 
-    pool = aioredis.ConnectionPool.from_url(secrets.agent_redis_url)
+    pool = aioredis.ConnectionPool.from_url(secrets.task_broker.redis_url)
     client = aioredis.Redis(connection_pool=pool)
     return RedisStorage(client), RedisBroker(client)
 

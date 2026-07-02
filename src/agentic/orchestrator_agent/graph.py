@@ -9,7 +9,6 @@ agent set can change without a restart.
 from __future__ import annotations
 
 import logging
-import os
 
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
@@ -31,20 +30,21 @@ def build_model(spec: OrchestratorSpec, secrets: AgentSecrets) -> BaseChatModel:
     """Construct the chat model from the spec, mirroring the simple-agent modes.
 
     - ``openai-compat`` — custom OpenAI-compatible endpoint via secret files
-      ``agent_model_base_url`` + ``agent_model_api_key`` (e.g. LM Studio, vLLM).
+      ``openai_compatible.base_url`` + ``openai_compatible.api_key`` (e.g. LM
+      Studio, vLLM, LiteLLM).
     - ``provider:model`` — first-class provider string (e.g.
-      ``anthropic:claude-sonnet-4-6``, ``openai:gpt-4o``); API keys are injected
-      from secret files into the environment for the provider integration.
+      ``anthropic:claude-sonnet-4-6``, ``openai:gpt-4o``); resolved via the
+      provider integration's own environment-based credential lookup.
     """
     settings = dict(spec.model_settings)
 
     if spec.model == "openai-compat":
-        base_url = secrets.agent_model_base_url
-        api_key = secrets.agent_model_api_key
+        base_url = secrets.openai_compatible.base_url
+        api_key = secrets.openai_compatible.api_key
         if not (base_url and api_key):
             raise RuntimeError(
                 "model: openai-compat requires secret files "
-                "'agent_model_base_url' and 'agent_model_api_key'"
+                "'openai_compatible.base_url' and 'openai_compatible.api_key'"
             )
         return ChatOpenAI(
             model=spec.model_id or "custom",
@@ -52,13 +52,6 @@ def build_model(spec: OrchestratorSpec, secrets: AgentSecrets) -> BaseChatModel:
             api_key=api_key,
             **settings,
         )
-
-    # First-class provider:model — inject keys from secret files so they are
-    # current after a reload, then let the integration resolve credentials.
-    if key := secrets.anthropic_api_key:
-        os.environ["ANTHROPIC_API_KEY"] = key
-    if key := secrets.openai_api_key:
-        os.environ["OPENAI_API_KEY"] = key
 
     return init_chat_model(spec.model, **settings)
 

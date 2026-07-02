@@ -95,6 +95,6 @@ def _build_redis_backends(secrets: AgentSecrets):
             "broker.backend = redis requires fasta2a[redis] and redis packages"
         ) from exc
 
-    pool = aioredis.ConnectionPool.from_url(secrets.agent_redis_url)
+    pool = aioredis.ConnectionPool.from_url(secrets.task_broker.redis_url)
     client = aioredis.Redis(connection_pool=pool)
     return RedisStorage(client), RedisBroker(client)

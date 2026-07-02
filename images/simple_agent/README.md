@@ -45,14 +45,12 @@ The agent reads credentials from files — one file per secret — rather than e
 mkdir -p /tmp/my-agent-secrets
 
 # For an OpenAI-compatible provider (LM Studio, Ollama, vLLM, etc.)
-echo "http://localhost:1234/v1" > /tmp/my-agent-secrets/agent_model_base_url
-echo "your-api-key"             > /tmp/my-agent-secrets/agent_model_api_key
+echo "http://localhost:1234/v1" > /tmp/my-agent-secrets/openai_compatible.base_url
+echo "your-api-key"             > /tmp/my-agent-secrets/openai_compatible.api_key
 
-# For Anthropic
-echo "sk-ant-..."  > /tmp/my-agent-secrets/anthropic_api_key
-
-# For OpenAI
-echo "sk-..."  > /tmp/my-agent-secrets/openai_api_key
+# For first-class providers (Anthropic, OpenAI, etc.), set the provider's standard
+# environment variable directly on the container (e.g. ANTHROPIC_API_KEY,
+# OPENAI_API_KEY) -- these are not read from mounted secret files.
 ```
 
 ### 2. Start the container
@@ -191,7 +189,7 @@ model: anthropic:claude-sonnet-4-6
 # model: google-gla:gemini-2.0-flash
 
 # Option B: OpenAI-compatible custom endpoint (LM Studio, Ollama, vLLM, etc.)
-# Requires secret files: agent_model_base_url, agent_model_api_key
+# Requires secret files: openai_compatible.base_url, openai_compatible.api_key
 model: openai-compat
 model_id: my-local-model             # reported in /v1/models; passed to the API
 
@@ -226,7 +224,7 @@ agent_card:
 
 broker:
   backend: memory # "memory" (default) | "redis"
-  # Redis requires secret file: agent_redis_url
+  # Redis requires secret file: task_broker.redis_url
   # Default Redis URL if secret not present: redis://localhost:6379/0
 
 interfaces:
@@ -241,18 +239,16 @@ reload:
 
 All secrets are read from individual files under `/etc/agent/secrets/`. File names match the secret keys (lowercased). On Kubernetes, these files are projected from a Secret volume.
 
-| File                   | Required for                                          |
-| ---------------------- | ----------------------------------------------------- |
-| `anthropic_api_key`    | `model: anthropic:*` providers                        |
-| `openai_api_key`       | `model: openai:*` providers                           |
-| `agent_model_base_url` | `model: openai-compat`                                |
-| `agent_model_api_key`  | `model: openai-compat`                                |
-| `agent_redis_url`      | `broker.backend: redis`                               |
-| `<any_key>`            | MCP header injection via `${ANY_KEY}` in `agent.yaml` |
+| File                         | Required for                                          |
+| ----------------------------- | ------------------------------------------------------ |
+| `openai_compatible.base_url` | `model: openai-compat`                                |
+| `openai_compatible.api_key`  | `model: openai-compat`                                |
+| `task_broker.redis_url`      | `broker.backend: redis`                               |
+| `<any_key>`                  | MCP header injection via `${ANY_KEY}` in `agent.yaml` |
 
-> **Local dev fallback**: If a secret file is missing, the agent falls back to the environment
-> variable of the same name (in uppercase). For example, `agent_model_api_key` falls back to
-> `AGENT_MODEL_API_KEY`. This makes local runs without a secrets directory possible.
+First-class providers (`model: anthropic:*`, `model: openai:*`, etc.) are not read from secret
+files -- supply credentials via the provider's standard environment variable
+(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...) directly on the container.
 
 ---
 
@@ -337,18 +333,19 @@ metadata:
   name: my-agent-secrets
   namespace: agents
 stringData:
-  # Provider API key — only the one matching your model: provider is needed
-  anthropic_api_key: "sk-ant-..."
-  # openai_api_key: "sk-..."
-  # agent_model_base_url: "http://..."    # only for model: openai-compat
-  # agent_model_api_key: "..."            # only for model: openai-compat
+  # Custom OpenAI-compatible endpoint — only needed for model: openai-compat
+  "openai_compatible.base_url": "http://..."
+  "openai_compatible.api_key": "..."
 
   # MCP server tokens — one file per token, named to match ${PLACEHOLDER} in agent.yaml
   policy_mcp_token: "tok-..."
 
   # Redis URL — only needed when broker.backend: redis
-  # agent_redis_url: "redis://redis:6379/0"
+  # "task_broker.redis_url": "redis://redis:6379/0"
 ```
+
+First-class providers (`model: anthropic:*`, `model: openai:*`, etc.) read credentials from
+the provider's standard environment variable on the container, not from this Secret.
 
 ### Deployment
 
@@ -482,7 +479,7 @@ broker:
 ```yaml
 # In your Secret:
 stringData:
-  agent_redis_url: "redis://my-redis:6379/0"
+  "task_broker.redis_url": "redis://my-redis:6379/0"
 ```
 
 ### Deploy Redis alongside the agent
@@ -530,7 +527,7 @@ Then set the secret:
 
 ```yaml
 stringData:
-  agent_redis_url: "redis://my-agent-redis:6379/0"
+  "task_broker.redis_url": "redis://my-agent-redis:6379/0"
 ```
 
 ---

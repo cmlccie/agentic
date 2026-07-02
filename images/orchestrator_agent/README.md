@@ -36,14 +36,12 @@ asynchronous polling via `tasks/get`, and push notifications.
 mkdir -p ./secrets
 
 # For an OpenAI-compatible provider (LM Studio, Ollama, vLLM, etc.)
-printf 'http://host.docker.internal:1234/v1' > ./secrets/agent_model_base_url
-printf 'lm-studio' > ./secrets/agent_model_api_key   # any non-empty placeholder
+printf 'http://host.docker.internal:1234/v1' > ./secrets/openai_compatible.base_url
+printf 'lm-studio' > ./secrets/openai_compatible.api_key   # any non-empty placeholder
 
-# For Anthropic (set model: anthropic:claude-sonnet-4-6 in agent.yaml)
-printf 'sk-ant-...' > ./secrets/anthropic_api_key
-
-# For OpenAI (set model: openai:gpt-4o in agent.yaml)
-printf 'sk-...' > ./secrets/openai_api_key
+# For first-class providers (Anthropic, OpenAI, etc.), set the provider's standard
+# environment variable directly on the container (e.g. ANTHROPIC_API_KEY,
+# OPENAI_API_KEY) -- these are not read from mounted secret files.
 ```
 
 ### 2. Start the container
@@ -121,12 +119,13 @@ name: orchestrator-agent
 description: "An orchestrator that delegates tasks across specialist A2A agents"
 
 # ── Model ──────────────────────────────────────────────────────────────────────
-# Option A: first-class provider (set the matching API key secret file)
+# Option A: first-class provider (set the provider's standard environment
+# variable directly on the container, e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY)
 # model: anthropic:claude-sonnet-4-6
 # model: openai:gpt-4o
 #
 # Option B: OpenAI-compatible custom endpoint (LM Studio, Ollama, vLLM, etc.)
-# Requires secret files: agent_model_base_url, agent_model_api_key
+# Requires secret files: openai_compatible.base_url, openai_compatible.api_key
 model: openai-compat
 model_id: local-model
 
@@ -174,7 +173,7 @@ reload:
 > **`broker.backend`:**
 > - `memory` (default) — in-process A2A task store; ephemeral, single-replica.
 > - `postgres` — persistent SQL task store (a2a-sdk `DatabaseTaskStore`) suitable
->   for multi-replica deployments. Requires the `agent_database_url` secret
+>   for multi-replica deployments. Requires the `task_broker.database_url` secret
 >   (`postgresql+asyncpg://user:pass@host:5432/dbname`); the `tasks` table is
 >   created automatically on first use.
 >
@@ -186,13 +185,15 @@ reload:
 Secrets are read from files under `/etc/agent/secrets/<key>` (Kubernetes Secret volume)
 on every access — rotated values are picked up without a restart.
 
-| Secret file              | Used for                                                        |
-| ------------------------ | --------------------------------------------------------------- |
-| `agent_model_base_url`   | OpenAI-compatible endpoint base URL (`model: openai-compat`)    |
-| `agent_model_api_key`    | OpenAI-compatible endpoint API key (`model: openai-compat`)     |
-| `anthropic_api_key`      | Anthropic API key (`model: anthropic:...`)                      |
-| `openai_api_key`         | OpenAI API key (`model: openai:...`)                            |
-| `<custom>`               | Any token referenced as `${CUSTOM}` in an `a2a_servers` header  |
+| Secret file                    | Used for                                                        |
+| ------------------------------- | ----------------------------------------------------------------- |
+| `openai_compatible.base_url`   | OpenAI-compatible endpoint base URL (`model: openai-compat`)    |
+| `openai_compatible.api_key`    | OpenAI-compatible endpoint API key (`model: openai-compat`)     |
+| `task_broker.database_url`     | Postgres task store DSN (`broker.backend: postgres`)            |
+| `<custom>`                     | Any token referenced as `${CUSTOM}` in an `a2a_servers` header  |
+
+First-class providers (`model: anthropic:...`, `model: openai:...`) read credentials from the
+provider's standard environment variable on the container, not from a secret file.
 
 ## Kubernetes Deployment
 

@@ -2,8 +2,10 @@ name: simple-agent
 description: "A general-purpose AI assistant"
 
 # Use "openai-compat" sentinel for custom OpenAI-compatible providers (e.g. LM Studio).
-# Requires secret files: agent_model_base_url and agent_model_api_key.
-# For first-class providers (Anthropic, OpenAI, Gemini), use the native model string:
+# Requires secret files: openai_compatible.base_url and openai_compatible.api_key.
+# For first-class providers (Anthropic, OpenAI, Gemini), use the native model string
+# and supply credentials via the provider's standard environment variable
+# (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY) -- not via a mounted secret file:
 #   model: anthropic:claude-sonnet-4-6
 #   model: openai:gpt-4o
 model: openai-compat
