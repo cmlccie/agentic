@@ -91,19 +91,20 @@ The `agent.yaml` you supply can omit the `instructions` field entirely — the m
 | `kubernetes_ingress_v1`    | Optional. Created only when `ingress.enabled = true`.                                                                   |
 
 <!-- BEGIN_TF_DOCS -->
-
 ## Requirements
 
-| Name                                                                        | Version   |
-| --------------------------------------------------------------------------- | --------- |
-| <a name="requirement_terraform"></a> [terraform](#requirement_terraform)    | >= 1.3.0  |
-| <a name="requirement_kubernetes"></a> [kubernetes](#requirement_kubernetes) | >= 2.20.0 |
+| Name | Version |
+| ---- | ------- |
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
+| <a name="requirement_kubernetes"></a> [kubernetes](#requirement\_kubernetes) | >= 2.20.0 |
+| <a name="requirement_litellm"></a> [litellm](#requirement\_litellm) | ~> 1.4 |
 
 ## Providers
 
-| Name                                                                  | Version   |
-| --------------------------------------------------------------------- | --------- |
-| <a name="provider_kubernetes"></a> [kubernetes](#provider_kubernetes) | >= 2.20.0 |
+| Name | Version |
+| ---- | ------- |
+| <a name="provider_kubernetes"></a> [kubernetes](#provider\_kubernetes) | >= 2.20.0 |
+| <a name="provider_litellm"></a> [litellm](#provider\_litellm) | ~> 1.4 |
 
 ## Modules
 
@@ -111,34 +112,38 @@ No modules.
 
 ## Resources
 
-| Name                                                                                                                               | Type     |
-| ---------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| Name | Type |
+| ---- | ---- |
 | [kubernetes_config_map_v1.agent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/config_map_v1) | resource |
 | [kubernetes_deployment_v1.agent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/deployment_v1) | resource |
-| [kubernetes_ingress_v1.agent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/ingress_v1)       | resource |
-| [kubernetes_secret_v1.agent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/secret_v1)         | resource |
-| [kubernetes_service_v1.agent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/service_v1)       | resource |
+| [kubernetes_ingress_v1.agent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/ingress_v1) | resource |
+| [kubernetes_manifest.network_policy](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/manifest) | resource |
+| [kubernetes_secret_v1.agent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/secret_v1) | resource |
+| [kubernetes_service_v1.agent](https://registry.terraform.io/providers/hashicorp/kubernetes/latest/docs/resources/service_v1) | resource |
+| [litellm_agent.agent](https://registry.terraform.io/providers/ncecere/litellm/latest/docs/resources/agent) | resource |
+| [litellm_key.agent](https://registry.terraform.io/providers/ncecere/litellm/latest/docs/resources/key) | resource |
 
 ## Inputs
 
-| Name                                                                  | Description                                                                                                                                                                                        | Type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Default     | Required |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | :------: |
-| <a name="input_config_files"></a> [config_files](#input_config_files) | Paths to the agent configuration files. Contents are read at plan/apply time and injected into the ConfigMap.                                                                                      | <pre>object({<br/> agent = string<br/> server = string<br/> instructions = optional(string)<br/> })</pre>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | n/a         |   yes    |
-| <a name="input_deployment"></a> [deployment](#input_deployment)       | Deployment configuration overrides.                                                                                                                                                                | <pre>object({<br/> image = optional(string, "ghcr.io/cmlccie/agentic/simple-agent")<br/> image_tag = optional(string, "latest")<br/> replicas = optional(number, 1)<br/> port = optional(number, 8000)<br/> agent_url = optional(string)<br/> log_level = optional(string, "info")<br/> resources = optional(object({<br/> requests = optional(object({<br/> cpu = optional(string, "100m")<br/> memory = optional(string, "128Mi")<br/> }), {})<br/> limits = optional(object({<br/> cpu = optional(string)<br/> memory = optional(string, "512Mi")<br/> }), {})<br/> }), {})<br/> })</pre> | `{}`        |    no    |
-| <a name="input_ingress"></a> [ingress](#input_ingress)                | Ingress configuration. Ingress is not deployed unless enabled = true.                                                                                                                              | <pre>object({<br/> enabled = optional(bool, false)<br/> class_name = optional(string)<br/> annotations = optional(map(string), {})<br/> host = optional(string)<br/> path = optional(string, "/")<br/> path_type = optional(string, "Prefix")<br/> tls_secret_name = optional(string)<br/> })</pre>                                                                                                                                                                                                                                                                                          | `{}`        |    no    |
-| <a name="input_labels"></a> [labels](#input_labels)                   | Additional labels to apply to all Kubernetes resources. Merged with module defaults; caller values override defaults.                                                                              | `map(string)`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `{}`        |    no    |
-| <a name="input_name"></a> [name](#input_name)                         | Agent deployment name slug. Used as the base name for all Kubernetes resources. Must be a valid Kubernetes domain name (lowercase alphanumeric and hyphens, must start and end with alphanumeric). | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | n/a         |   yes    |
-| <a name="input_namespace"></a> [namespace](#input_namespace)          | Kubernetes namespace to deploy into.                                                                                                                                                               | `string`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `"default"` |    no    |
-| <a name="input_secrets"></a> [secrets](#input_secrets)                | Agent secrets mounted as files at /etc/agent/secrets/. Only non-null values are written to the Kubernetes Secret.                                                                                  | <pre>object({<br/> anthropic_api_key = optional(string)<br/> openai_api_key = optional(string)<br/> agent_model_base_url = optional(string)<br/> agent_model_api_key = optional(string)<br/> agent_redis_url = optional(string)<br/> additional = optional(map(string), {})<br/> })</pre>                                                                                                                                                                                                                                                                                                    | `{}`        |    no    |
-| <a name="input_service"></a> [service](#input_service)                | Service configuration.                                                                                                                                                                             | <pre>object({<br/> type = optional(string, "ClusterIP")<br/> port = optional(number, 80)<br/> })</pre>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `{}`        |    no    |
+| Name | Description | Type | Default | Required |
+| ---- | ----------- | ---- | ------- | :------: |
+| <a name="input_config_files"></a> [config\_files](#input\_config\_files) | Paths to the agent configuration files. Contents are read at plan/apply time and injected into the ConfigMap. | <pre>object({<br/>    agent        = string<br/>    server       = string<br/>    instructions = optional(string)<br/>  })</pre> | n/a | yes |
+| <a name="input_deployment"></a> [deployment](#input\_deployment) | Deployment configuration overrides. | <pre>object({<br/>    image     = optional(string, "ghcr.io/cmlccie/agentic/simple-agent")<br/>    image_tag = optional(string, "latest")<br/>    replicas  = optional(number, 1)<br/>    port      = optional(number, 8000)<br/>    agent_url = optional(string)<br/>    log_level = optional(string, "info")<br/>    resources = optional(object({<br/>      requests = optional(object({<br/>        cpu    = optional(string, "100m")<br/>        memory = optional(string, "128Mi")<br/>      }), {})<br/>      limits = optional(object({<br/>        cpu    = optional(string)<br/>        memory = optional(string, "512Mi")<br/>      }), {})<br/>    }), {})<br/>  })</pre> | `{}` | no |
+| <a name="input_ingress"></a> [ingress](#input\_ingress) | Ingress configuration. Ingress is not deployed unless enabled = true. | <pre>object({<br/>    enabled         = optional(bool, false)<br/>    class_name      = optional(string)<br/>    annotations     = optional(map(string), {})<br/>    host            = optional(string)<br/>    path            = optional(string, "/")<br/>    path_type       = optional(string, "Prefix")<br/>    tls_secret_name = optional(string)<br/>  })</pre> | `{}` | no |
+| <a name="input_labels"></a> [labels](#input\_labels) | Additional labels to apply to all Kubernetes resources. Merged with module defaults; caller values override defaults. | `map(string)` | `{}` | no |
+| <a name="input_litellm_integration"></a> [litellm\_integration](#input\_litellm\_integration) | Optional LiteLLM registration. When enabled, the module creates a litellm\_key (outbound auth for this agent's own calls to LiteLLM) and a litellm\_agent (A2A registration), and injects the generated key into the agent's Kubernetes Secret automatically. Agent card name/description are read from config\_files.agent (no separate input needed). | <pre>object({<br/>    enabled = optional(bool, false)<br/>    models  = optional(list(string), ["agent-model"])<br/>  })</pre> | `{}` | no |
+| <a name="input_name"></a> [name](#input\_name) | Agent deployment name slug. Used as the base name for all Kubernetes resources. Must be a valid Kubernetes domain name (lowercase alphanumeric and hyphens, must start and end with alphanumeric). | `string` | n/a | yes |
+| <a name="input_namespace"></a> [namespace](#input\_namespace) | Kubernetes namespace to deploy into. | `string` | `"default"` | no |
+| <a name="input_network_policy"></a> [network\_policy](#input\_network\_policy) | Optional Kubernetes manifest content (e.g. CiliumNetworkPolicy YAML) to deploy alongside the agent. Pass raw manifest text, not a file path -- callers decide how to obtain it (file(), templatefile(), generated inline, etc). Null (default) means no policy is deployed. | `string` | `null` | no |
+| <a name="input_secrets"></a> [secrets](#input\_secrets) | Agent secrets mounted as files at /etc/agent/secrets/. Only non-null values are written to the Kubernetes Secret. | <pre>object({<br/>    anthropic_api_key    = optional(string)<br/>    openai_api_key       = optional(string)<br/>    agent_model_base_url = optional(string)<br/>    agent_model_api_key  = optional(string)<br/>    agent_redis_url      = optional(string)<br/>    additional           = optional(map(string), {})<br/>  })</pre> | `{}` | no |
+| <a name="input_service"></a> [service](#input\_service) | Service configuration. | <pre>object({<br/>    type = optional(string, "ClusterIP")<br/>    port = optional(number, 80)<br/>  })</pre> | `{}` | no |
 
 ## Outputs
 
-| Name                                                                                | Description                                                                |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| <a name="output_ingress_hostname"></a> [ingress_hostname](#output_ingress_hostname) | Ingress hostname, or null if ingress is disabled or no host was specified. |
-| <a name="output_name"></a> [name](#output_name)                                     | Base name used for all Kubernetes resources.                               |
-| <a name="output_namespace"></a> [namespace](#output_namespace)                      | Kubernetes namespace the agent is deployed into.                           |
-| <a name="output_service_name"></a> [service_name](#output_service_name)             | Name of the ClusterIP Service fronting the agent.                          |
-
+| Name | Description |
+| ---- | ----------- |
+| <a name="output_ingress_hostname"></a> [ingress\_hostname](#output\_ingress\_hostname) | Ingress hostname, or null if ingress is disabled or no host was specified. |
+| <a name="output_name"></a> [name](#output\_name) | Base name used for all Kubernetes resources. |
+| <a name="output_namespace"></a> [namespace](#output\_namespace) | Kubernetes namespace the agent is deployed into. |
+| <a name="output_service_name"></a> [service\_name](#output\_service\_name) | Name of the ClusterIP Service fronting the agent. |
 <!-- END_TF_DOCS -->

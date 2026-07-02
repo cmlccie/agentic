@@ -88,3 +88,18 @@ variable "ingress" {
   })
   default = {}
 }
+
+variable "litellm_integration" {
+  description = "Optional LiteLLM registration. When enabled, the module creates a litellm_key (outbound auth for this agent's own calls to LiteLLM) and a litellm_agent (A2A registration), and injects the generated key into the agent's Kubernetes Secret automatically. Agent card name/description are read from config_files.agent (no separate input needed)."
+  type = object({
+    enabled = optional(bool, false)
+    models  = optional(list(string), ["agent-model"])
+  })
+  default = {}
+}
+
+variable "network_policy" {
+  description = "Optional Kubernetes manifest content (e.g. CiliumNetworkPolicy YAML) to deploy alongside the agent. Pass raw manifest text, not a file path -- callers decide how to obtain it (file(), templatefile(), generated inline, etc). Null (default) means no policy is deployed."
+  type        = string
+  default     = null
+}

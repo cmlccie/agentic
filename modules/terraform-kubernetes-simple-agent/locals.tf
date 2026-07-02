@@ -16,6 +16,10 @@ locals {
     "app.kubernetes.io/name" = var.name
   }
 
+  # Decoded agent.yaml, used to derive the litellm_agent agent_card's name/description
+  # so callers don't have to duplicate them in a separate input.
+  agent_config = yamldecode(file(var.config_files.agent))
+
   # Instructions injection: if a path is supplied, decode agent.yaml, merge in the
   # instructions key, and re-encode. yamlencode produces canonical but semantically
   # equivalent YAML (the agent uses yaml.safe_load, so format differences are harmless).
@@ -32,7 +36,7 @@ locals {
       anthropic_api_key    = var.secrets.anthropic_api_key
       openai_api_key       = var.secrets.openai_api_key
       agent_model_base_url = var.secrets.agent_model_base_url
-      agent_model_api_key  = var.secrets.agent_model_api_key
+      agent_model_api_key  = var.litellm_integration.enabled ? litellm_key.agent[0].key : var.secrets.agent_model_api_key
       agent_redis_url      = var.secrets.agent_redis_url
     } : k => v if v != null
   }
