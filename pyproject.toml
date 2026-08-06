@@ -10,6 +10,7 @@ dependencies = [
     "fastapi-openai-compat>=1.2.0",
     "fastmcp>=2.13.3",
     "httpx>=0.28.1",
+    "huggingface-hub>=1.26.1",
     "langchain>=1.0",
     "langchain-anthropic>=1.0",
     "langchain-openai>=1.0",
