@@ -1,0 +1,18 @@
+FROM ghcr.io/cmlccie/agentic/python:latest
+
+LABEL org.opencontainers.image.title="MCP AIOps Server"
+LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) server providing deterministic validation and benchmarking tools for LLM model-serving deployments."
+LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/tools/mcp/aiops_server/README.md"
+LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
+
+COPY aiops_server.py README.md ./
+COPY aiops/ ./aiops/
+RUN chmod +x aiops_server.py
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port 8000 for HTTP transport
+EXPOSE 8000
+
+ENTRYPOINT ["/app/aiops_server.py"]
+CMD ["stdio"]

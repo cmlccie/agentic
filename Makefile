@@ -58,7 +58,7 @@ test: ## Run tests
 # Build Targets
 # -------------------------------------------------------------------------------------------------
 
-.PHONY: python-base-image simple-agent orchestrator-agent agents-weather-agent agents-thousandeyes-agent agents-meraki-agent agents-network-agent tools-mcp-weather-server tools-mcp-meraki-server
+.PHONY: python-base-image simple-agent orchestrator-agent agents-weather-agent agents-thousandeyes-agent agents-meraki-agent agents-network-agent tools-mcp-weather-server tools-mcp-meraki-server tools-mcp-aiops-server
 
 images/python/requirements.txt: pyproject.toml uv.lock ## Export requirements.txt for the Python Base Image
 	uv export --no-dev --no-emit-project --no-hashes --format requirements.txt -o images/python/requirements.txt
@@ -84,6 +84,9 @@ agents-weather-agent: ## Build the Weather Agent
 
 tools-mcp-meraki-server: ## Build the MCP Meraki Server
 	$(CONTAINER_ENGINE) build -f tools/mcp/meraki_server/Containerfile -t agentic/tools-mcp-meraki-server:local tools/mcp/meraki_server/
+
+tools-mcp-aiops-server: ## Build the MCP AIOps Server
+	$(CONTAINER_ENGINE) build -f tools/mcp/aiops_server/Containerfile -t agentic/tools-mcp-aiops-server:local tools/mcp/aiops_server/
 
 agents-meraki-agent: ## Build the Meraki Agent
 	$(CONTAINER_ENGINE) build -f agents/meraki_agent/Containerfile -t agentic/agents-meraki-agent:local agents/meraki_agent/

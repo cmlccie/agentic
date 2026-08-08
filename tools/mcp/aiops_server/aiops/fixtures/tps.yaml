@@ -1,0 +1,18 @@
+fixtures:
+  - id: tps-decode-v1
+    kind: tps
+    description: >-
+      Decode-throughput fixture: elicits long continuous output so streams run
+      to the max_tokens limit rather than stopping early.
+    model_families: ["*"]
+    messages:
+      - role: user
+        content: >-
+          Write a detailed, continuous essay on the history of computing, from
+          mechanical calculators through mainframes, personal computers, and
+          the internet to modern GPUs. Keep writing until you are cut off; do
+          not summarize or conclude early.
+    params:
+      temperature: 0
+    expected:
+      min_completion_tokens: 384

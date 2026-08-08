@@ -1,0 +1,15 @@
+fixtures:
+  - id: inference-basic-v1
+    kind: inference
+    description: >-
+      Minimal completion check: a trivially answerable instruction with a
+      deterministic expected substring in the response.
+    model_families: ["*"]
+    messages:
+      - role: user
+        content: "Reply with exactly the word: PONG"
+    params:
+      temperature: 0
+      max_tokens: 128
+    expected:
+      content_contains: "PONG"

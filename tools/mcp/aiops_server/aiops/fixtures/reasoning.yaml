@@ -1,0 +1,60 @@
+fixtures:
+  - id: reasoning-basic-v1
+    kind: reasoning
+    description: >-
+      Reasoning-provoking trick question. A model with a working reasoning
+      parser returns its deliberation in a structured reasoning field and a
+      clean final answer in content.
+    model_families: ["*"]
+    messages:
+      - role: user
+        content: >-
+          A farmer has 17 sheep. All but 9 run away. How many sheep does the
+          farmer have left? Think through the wording carefully before
+          answering, then state the final number.
+    params:
+      temperature: 0
+      max_tokens: 1024
+
+  - id: reasoning-gpt-oss-v1
+    kind: reasoning
+    description: >-
+      GPT-OSS variant of the reasoning check; sets reasoning_effort, which the
+      harmony chat template consumes.
+    model_families: ["gpt-oss"]
+    messages:
+      - role: user
+        content: >-
+          A farmer has 17 sheep. All but 9 run away. How many sheep does the
+          farmer have left? Think through the wording carefully before
+          answering, then state the final number.
+    params:
+      temperature: 0
+      max_tokens: 1024
+      reasoning_effort: medium
+
+  - id: reasoning-qwen3-v1
+    kind: reasoning
+    description: >-
+      Qwen3-thinking variant of the reasoning check; enables thinking via
+      chat_template_kwargs on SGLang and vLLM.
+    model_families: ["qwen3"]
+    messages:
+      - role: user
+        content: >-
+          A farmer has 17 sheep. All but 9 run away. How many sheep does the
+          farmer have left? Think through the wording carefully before
+          answering, then state the final number.
+    params:
+      temperature: 0
+      max_tokens: 1024
+    engine_overrides:
+      sglang:
+        chat_template_kwargs:
+          enable_thinking: true
+      vllm:
+        chat_template_kwargs:
+          enable_thinking: true
+      nim:
+        chat_template_kwargs:
+          enable_thinking: true

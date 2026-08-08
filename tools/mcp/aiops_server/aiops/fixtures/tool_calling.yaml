@@ -1,0 +1,43 @@
+fixtures:
+  - id: toolcall-weather-v1
+    kind: tool_calling
+    description: >-
+      Single-function tool-calling check: a prompt that plainly requires the
+      provided get_current_weather tool, with a JSON Schema the emitted
+      arguments must validate against.
+    model_families: ["*"]
+    messages:
+      - role: user
+        content: >-
+          What is the current weather in Paris, France? Use the
+          get_current_weather tool to find out.
+    params:
+      temperature: 0
+      max_tokens: 512
+    tools:
+      - type: function
+        function:
+          name: get_current_weather
+          description: Get the current weather for a location.
+          parameters:
+            type: object
+            properties:
+              location:
+                type: string
+                description: "City and country, e.g. 'Paris, France'."
+              unit:
+                type: string
+                enum: [celsius, fahrenheit]
+            required: [location]
+    expected:
+      tool_name: get_current_weather
+      arguments_schema:
+        type: object
+        properties:
+          location:
+            type: string
+          unit:
+            type: string
+            enum: [celsius, fahrenheit]
+        required: [location]
+        additionalProperties: false
