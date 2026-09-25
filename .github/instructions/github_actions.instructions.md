@@ -42,7 +42,7 @@ The reusable workflow automatically handles image tagging with:
 
 - Semantic versioning patterns for releases (`{{version}}`, `{{major}}.{{minor}}`, `{{major}}`)
 - Branch names for development builds (`{{branch}}`)
-- Commit SHA for traceability (`{{branch}}-{{sha}}`)
+- Commit SHA for traceability (`{{branch}}-{{sha}}`) on non-PR builds; PR builds use the `pr-<number>` tag
 - `latest` tag only for default branch builds
 - Pull request references for PR builds
 
