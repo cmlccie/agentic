@@ -184,8 +184,7 @@ class TestAgentSecrets:
         )
         secrets = AgentSecrets(d)
         assert (
-            secrets.task_broker.database_url
-            == "postgresql+asyncpg://u:p@host:5432/db"
+            secrets.task_broker.database_url == "postgresql+asyncpg://u:p@host:5432/db"
         )
 
     def test_get_generic_key(self, tmp_path):

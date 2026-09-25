@@ -86,15 +86,23 @@ from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
 from a2a.helpers import get_artifact_text, new_text_message
 from a2a.types import Role, SendMessageRequest
 
+
 async def main():
     async with httpx.AsyncClient(timeout=120) as http:
-        card = await A2ACardResolver(http, base_url="http://localhost:8000/a2a").get_agent_card()
-        client = ClientFactory(ClientConfig(httpx_client=http, streaming=True)).create(card)
-        req = SendMessageRequest(message=new_text_message("Plan my day.", role=Role.ROLE_USER))
+        card = await A2ACardResolver(
+            http, base_url="http://localhost:8000/a2a"
+        ).get_agent_card()
+        client = ClientFactory(ClientConfig(httpx_client=http, streaming=True)).create(
+            card
+        )
+        req = SendMessageRequest(
+            message=new_text_message("Plan my day.", role=Role.ROLE_USER)
+        )
         async for resp in client.send_message(req):
             if resp.HasField("artifact_update"):
                 print(get_artifact_text(resp.artifact_update.artifact))
         await client.close()
+
 
 asyncio.run(main())
 ```
