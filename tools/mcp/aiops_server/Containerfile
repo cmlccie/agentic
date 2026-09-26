@@ -1,4 +1,7 @@
-FROM ghcr.io/cmlccie/agentic/python:latest
+# Override BASE_IMAGE to build against a specific (e.g. digest-pinned or locally built)
+# base image: --build-arg BASE_IMAGE=agentic/python:local
+ARG BASE_IMAGE=ghcr.io/cmlccie/agentic/python:latest
+FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="MCP AIOps Server"
 LABEL org.opencontainers.image.description="A Model Context Protocol (MCP) server providing deterministic validation and benchmarking tools for LLM model-serving deployments."
@@ -9,7 +12,7 @@ COPY aiops_server.py README.md ./
 COPY aiops/ ./aiops/
 RUN chmod +x aiops_server.py
 RUN chown -R appuser:appuser /app
-USER appuser
+USER 10000:10000
 
 # Expose port 8000 for HTTP transport
 EXPOSE 8000

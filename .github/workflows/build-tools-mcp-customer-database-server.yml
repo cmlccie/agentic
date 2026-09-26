@@ -32,6 +32,8 @@ permissions:
 
 jobs:
   build:
+    # Skip workflow_run builds when the base image build did not succeed.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     uses: ./.github/workflows/reusable-build-python-container-image.yml
     with:
       image-name: tools-mcp-customer-database-server

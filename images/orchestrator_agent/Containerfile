@@ -1,4 +1,7 @@
-FROM ghcr.io/cmlccie/agentic/python:latest
+# Override BASE_IMAGE to build against a specific (e.g. digest-pinned or locally built)
+# base image: --build-arg BASE_IMAGE=agentic/python:local
+ARG BASE_IMAGE=ghcr.io/cmlccie/agentic/python:latest
+FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="Orchestrator Agent"
 LABEL org.opencontainers.image.description="A config-driven LangGraph supervisor that orchestrates tasks across A2A agents, with OpenAI-compatible and A2A interfaces."
@@ -12,7 +15,7 @@ RUN mkdir -p /etc/agent/config /etc/agent/secrets
 COPY agent.yaml server.yaml /etc/agent/config/
 
 RUN chown -R appuser:appuser /etc/agent
-USER appuser
+USER 10000:10000
 
 # Expose port 8000 for HTTP interfaces (OpenAI-compat, A2A, health)
 EXPOSE 8000

@@ -23,6 +23,10 @@ resource "kubernetes_deployment_v1" "agent" {
           run_as_user     = 10000
           run_as_group    = 10000
           fs_group        = 10000
+
+          seccomp_profile {
+            type = "RuntimeDefault"
+          }
         }
 
         container {
@@ -30,6 +34,15 @@ resource "kubernetes_deployment_v1" "agent" {
           image             = local.image
           image_pull_policy = var.deployment.image_tag == "latest" ? "Always" : "IfNotPresent"
           args              = local.agent_args
+
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+
+            capabilities {
+              drop = ["ALL"]
+            }
+          }
 
           port {
             name           = "http"
@@ -48,6 +61,12 @@ resource "kubernetes_deployment_v1" "agent" {
             name       = "config"
             mount_path = "/etc/agent/config"
             read_only  = true
+          }
+
+          # Writable scratch space; the root filesystem is read-only.
+          volume_mount {
+            name       = "tmp"
+            mount_path = "/tmp"
           }
 
           dynamic "volume_mount" {
@@ -88,6 +107,11 @@ resource "kubernetes_deployment_v1" "agent" {
           config_map {
             name = kubernetes_config_map_v1.agent.metadata[0].name
           }
+        }
+
+        volume {
+          name = "tmp"
+          empty_dir {}
         }
 
         dynamic "volume" {

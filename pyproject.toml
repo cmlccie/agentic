@@ -72,7 +72,11 @@ orchestrator-agent = "agentic.orchestrator_agent.cli:app"
 # pydantic-graph = { git = "https://github.com/pydantic/pydantic-ai.git", branch = "parallel-mcps", subdirectory = "pydantic_graph" }
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Collect the shared test suite and the tests that live next to tool servers
+# (e.g. tools/mcp/aiops_server/tests). importlib mode avoids module-name
+# collisions between test directories that are not Python packages.
+testpaths = ["tests", "tools"]
+addopts = ["--import-mode=importlib"]
 
 [tool.ruff]
 line-length = 88
