@@ -3,6 +3,7 @@
 import functools
 import inspect
 import logging
+import sys
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
@@ -45,6 +46,31 @@ def fancy(level: int | str = logging.INFO) -> None:
         handlers=[RichHandler(console=Console(stderr=True))],
         force=True,
     )
+
+
+# --------------------------------------------------------------------------------------
+# Plain
+# --------------------------------------------------------------------------------------
+
+
+def plain(level: int | str = logging.INFO) -> None:
+    """Replace all root logging handlers with one-line-per-record stderr logging.
+
+    Suited to containers: no ANSI colors or line wrapping, so log collectors
+    (Loki, Elasticsearch, Cloud Logging) can parse each record.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S%z",
+        handlers=[logging.StreamHandler(sys.stderr)],
+        force=True,
+    )
+
+
+def auto(level: int | str = logging.INFO) -> None:
+    """Use `fancy` logging on an interactive terminal and `plain` logging otherwise."""
+    (fancy if sys.stderr.isatty() else plain)(level)
 
 
 # -------------------------------------------------------------------------------------------------
