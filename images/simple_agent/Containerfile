@@ -4,7 +4,7 @@ ARG BASE_IMAGE=ghcr.io/cmlccie/agentic/python:latest
 FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="Simple Agent"
-LABEL org.opencontainers.image.description="A config-driven Pydantic AI agent with OpenAI-compatible, A2A, and web UI interfaces."
+LABEL org.opencontainers.image.description="A config-driven Pydantic AI agent with OpenAI-compatible and A2A interfaces."
 LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/images/simple_agent/README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
@@ -17,7 +17,7 @@ COPY agent.yaml server.yaml /etc/agent/config/
 RUN chown -R appuser:appuser /etc/agent
 USER 10000:10000
 
-# Expose port 8000 for HTTP interfaces (OpenAI-compat, A2A, UI, health)
+# Expose port 8000 for HTTP interfaces (OpenAI-compatible API, A2A, health)
 EXPOSE 8000
 
 ENTRYPOINT ["simple-agent"]

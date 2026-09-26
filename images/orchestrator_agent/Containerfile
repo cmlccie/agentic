@@ -4,7 +4,7 @@ ARG BASE_IMAGE=ghcr.io/cmlccie/agentic/python:latest
 FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="Orchestrator Agent"
-LABEL org.opencontainers.image.description="A config-driven LangGraph supervisor that orchestrates tasks across A2A agents, with OpenAI-compatible and A2A interfaces."
+LABEL org.opencontainers.image.description="A config-driven Pydantic AI agent that orchestrates tasks across A2A agents, with OpenAI-compatible and A2A interfaces."
 LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic/blob/main/images/orchestrator_agent/README.md"
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 

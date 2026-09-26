@@ -1,33 +1,25 @@
+# server.yaml — how the agent is served (same schema as the simple agent).
+# Reference: images/simple_agent/README.md#serveryaml
 agent_card:
-  display_name: "Orchestrator Agent"
-  description: "An orchestrator that delegates tasks across specialist A2A agents, with OpenAI-compatible and A2A interfaces."
+  display_name: Orchestrator Agent
+  description: Delegates tasks across specialist A2A agents, with OpenAI-compatible and A2A interfaces.
   version: "1.0.0"
-  icon_url: ""
-  documentation_url: ""
-  provider:
-    organization: ""
-    url: ""
   skills: []
-  # Example skill entry:
   # skills:
   #   - id: orchestration
   #     name: Task Orchestration
   #     description: Coordinates specialist agents to fulfill multi-step requests.
   #     tags: [orchestration, routing]
-  #     examples:
-  #       - "Plan a trip and check the weather for each stop"
-  #     input_modes: [text/plain]
-  #     output_modes: [text/plain]
-
-broker:
-  backend: memory  # "memory" | "postgres"
-  # postgres persists A2A tasks via a SQL DatabaseTaskStore (multi-replica safe).
-  # Requires the secret file: task_broker.database_url
-  #   postgresql+asyncpg://user:password@postgres-host:5432/orchestrator
 
 interfaces:
+  openai: true
   a2a: true
-  openai_compat: true
 
-reload:
-  drain_timeout: 30  # seconds to wait for in-flight tasks before forcing reload
+a2a:
+  response_mode: auto # delegation usually makes this a task with streamed activity
+  store:
+    backend: memory # memory | sql (DSN in the secret file a2a.database_url)
+
+streaming:
+  activity: summary # delegated agents' activity is relayed, attributed by agent
+  thinking: true

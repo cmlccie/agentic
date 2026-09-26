@@ -1,625 +1,405 @@
 # Simple Agent
 
-A config-driven Pydantic AI agent that exposes two production interfaces from a single container:
+A config-driven [Pydantic AI](https://pydantic.dev/docs/ai/) agent served over an OpenAI-compatible API and the Agent2Agent (A2A) protocol. The agent is defined entirely by two files — `agent.yaml` (a Pydantic AI agent spec: model, instructions, and capabilities such as MCP tool servers) and `server.yaml` (the A2A agent card and serving options) — so a new agent is a new pair of files, not new code. While the agent works, its activity (thinking, tool calls and results, delegated agents' activity) streams to the caller in the OpenAI reasoning channel and as A2A task status updates, followed by the final answer.
 
-- **OpenAI-compatible REST API** — drop-in replacement for `/v1/chat/completions`
-- **Agent2Agent (A2A) protocol** — interoperable with other A2A agents
+This README is the reference for the agent runtime (`src/agentic/agent`), which the [orchestrator agent](../orchestrator_agent/README.md) shares.
 
-A separate `web-chat` command starts a standalone browser-based chat UI — useful for local testing and development, but not part of the `serve` process.
+- [Interfaces](#interfaces)
+- [Quick start](#quick-start)
+- [OpenAI-compatible API](#openai-compatible-api)
+- [A2A](#a2a)
+- [Configuration](#configuration)
+- [Hot reload](#hot-reload)
+- [Observability](#observability)
+- [Kubernetes deployment](#kubernetes-deployment)
+- [Build](#build)
+- [CLI reference](#cli-reference)
 
-The agent's identity — model, instructions, MCP tool servers — is defined entirely in `agent.yaml`. Infrastructure settings live in `server.yaml`. Both files are hot-reloaded at runtime: update a ConfigMap or rotate a secret, and the agent reloads without downtime.
+## Interfaces
 
----
+| Path                                                       | Purpose                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| `GET /v1/models`                                           | The agent, listed as one model                                     |
+| `POST /v1/chat/completions`                                | OpenAI Chat Completions (streaming and non-streaming)              |
+| `POST /a2a`                                                | A2A JSON-RPC (A2A 1.0 methods plus the A2A 0.3 method names)       |
+| `GET /.well-known/agent-card.json`                         | A2A agent card (also under `/a2a/` and at the legacy `agent.json`) |
+| `GET /health/live`                                         | Liveness probe                                                     |
+| `GET /health/ready`                                        | Readiness probe (reports the configuration generation)             |
 
-## Interfaces and Endpoints
+Either interface can be switched off in `server.yaml`; both are on by default.
 
-### `simple-agent serve` endpoints
+## Quick start
 
-| Path                                   | Description                                                      |
-| -------------------------------------- | ---------------------------------------------------------------- |
-| `GET /health/live`                     | Liveness probe — always 200 while the process is alive           |
-| `GET /health/ready`                    | Readiness probe — 503 during hot-reload drain/reload cycle       |
-| `GET /v1/models`                       | List available models                                            |
-| `POST /v1/chat/completions`            | OpenAI-compatible chat completions (streaming and non-streaming) |
-| `GET /a2a/.well-known/agent-card.json` | A2A agent card                                                   |
-| `POST /a2a/`                           | A2A JSON-RPC task endpoint                                       |
-
-All non-health endpoints return `503 Retry-After: 5` during a hot-reload drain/reload cycle.
-
-### `simple-agent web-chat` endpoints
-
-| Path        | Description                               |
-| ----------- | ----------------------------------------- |
-| `GET /`     | Streaming chat web UI                     |
-| `POST /chat`| SSE chat endpoint (used by the web UI)    |
-
----
-
-## Local Testing with Docker
-
-### 1. Create a secrets directory
-
-The agent reads credentials from files — one file per secret — rather than environment variables. This mirrors how Kubernetes Secret volumes work.
+Run the published image against a vLLM (or SGLang, or NIM) server:
 
 ```bash
-mkdir -p /tmp/my-agent-secrets
+mkdir -p secrets
+printf 'http://host.docker.internal:8000/v1' > secrets/model.base_url
+printf 'not-needed' > secrets/model.api_key
 
-# For an OpenAI-compatible provider (LM Studio, Ollama, vLLM, etc.)
-echo "http://localhost:1234/v1" > /tmp/my-agent-secrets/openai_compatible.base_url
-echo "your-api-key"             > /tmp/my-agent-secrets/openai_compatible.api_key
-
-# For first-class providers (Anthropic, OpenAI, etc.), set the provider's standard
-# environment variable directly on the container (e.g. ANTHROPIC_API_KEY,
-# OPENAI_API_KEY) -- these are not read from mounted secret files.
+docker run --rm -p 8080:8000 \
+  -v "$PWD/secrets:/etc/agent/secrets:ro" \
+  ghcr.io/cmlccie/agentic/simple-agent:latest serve --public-url http://localhost:8080
 ```
 
-### 2. Start the container
+The default `agent.yaml` uses `model: vllm:local-model`; mount your own config directory at `/etc/agent/config` to change the model name, instructions, or tools. Then:
 
 ```bash
-docker run -d \
-  --name my-agent \
-  -p 8000:8000 \
-  -v scratch/simple-agent-secrets:/etc/agent/secrets:ro \
-  ghcr.io/cmlccie/agentic/simple-agent:latest \
-  serve --agent-url http://localhost:8000
+curl -s localhost:8080/health/ready
+# {"status":"ready","agent":"simple-agent","generation":1}
+
+curl -s localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model": "simple-agent", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
-> **macOS / Docker Desktop**: If your model server is running on the host machine, replace
-> `http://localhost:1234` with `http://host.docker.internal:1234` in the secrets file.
-
-### 3. Check readiness
+For local development without a container, point `--config-dir` at any directory with the two files:
 
 ```bash
-curl http://localhost:8000/health/ready
-# {"status":"ready","in_flight":0}
+uv run simple-agent serve --config-dir images/simple_agent --secrets-dir ./secrets --port 8080
+uv run simple-agent chat --config-dir images/simple_agent    # terminal chat
+uv run simple-agent web --config-dir images/simple_agent     # browser chat UI on :8080
 ```
 
-### 4. Test the API
+## OpenAI-compatible API
 
-```bash
-# List available models
-curl http://localhost:8000/v1/models
+The API follows the OpenAI Chat Completions contract, so Open WebUI, LibreChat, the `openai` SDK, and LangChain work unchanged. Conversations are stateless: send the full history each time.
 
-# Non-streaming completion
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "simple-agent",
-    "messages": [{"role": "user", "content": "What is the capital of France?"}]
-  }'
+**Non-streaming** responses put the answer in `message.content` and the agent's activity in `message.reasoning_content`, with token `usage`.
 
-# Streaming completion
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "simple-agent",
-    "messages": [{"role": "user", "content": "Count from 1 to 5."}],
-    "stream": true
-  }'
+**Streaming** responses (`"stream": true`) are Server-Sent Events in this order:
+
+1. A role chunk
+2. `delta.reasoning_content` chunks while the agent works
+3. The answer in `delta.content`
+4. A chunk with `finish_reason: "stop"`
+5. A usage chunk, when requested with `stream_options.include_usage`
+6. `data: [DONE]`
+
+While a slow tool runs, `: keep-alive` comment lines keep proxies from closing the connection. If the client disconnects, the agent run (and any tool call or delegated task in progress) is cancelled.
+
+```text
+data: {"choices":[{"delta":{"reasoning_content":"The user wants the weather in Paris."}}], ...}
+data: {"choices":[{"delta":{"reasoning_content":"\n→ get_forecast({\"city\": \"Paris\"})\n"}}], ...}
+data: {"choices":[{"delta":{"reasoning_content":"\n← get_forecast: {\"temp_c\": 18, \"sky\": \"sunny\"}\n"}}], ...}
+data: {"choices":[{"delta":{"content":"It's 18°C and sunny in Paris."}}], ...}
+data: {"choices":[{"delta":{},"finish_reason":"stop"}], ...}
+data: [DONE]
 ```
 
-### 5. Open the web chat UI
+`reasoning_content` is the field Open WebUI (collapsible "Thinking" panel), LibreChat, and vLLM-style clients read. Reasoning that clients send back in assistant messages (including Open WebUI's `<think>` blocks) is stripped so activity isn't fed back to the model.
 
-Run the `web-chat` command on a separate port:
+**Errors** use the OpenAI error shape (`{"error": {"message", "type", "code"}}`). A failure after streaming has started is sent as an `error` event, which the `openai` SDK raises as `APIError`, so a failed run never looks like an empty answer. Agent failures carry `x-should-retry: false` so SDK retries don't re-run tools with side effects. Error messages name the exception type; details are only logged.
 
-```bash
-docker run -it --rm \
-  -p 8001:8001 \
-  -v /tmp/my-agent-secrets:/etc/agent/secrets:ro \
-  ghcr.io/cmlccie/agentic/simple-agent:latest \
-  web-chat --port 8001
-```
+Other request details:
 
-Then navigate to **[http://localhost:8001/](http://localhost:8001/)** in your browser.
-
-### 6. Run the terminal chat interface
-
-The `simple-agent chat` command loads the same config and starts an interactive terminal session — useful for quick testing without a running server.
-
-```bash
-docker run -it --rm \
-  -v /tmp/my-agent-secrets:/etc/agent/secrets:ro \
-  ghcr.io/cmlccie/agentic/simple-agent:latest \
-  chat
-```
-
-To use a custom config directory instead of the image defaults:
-
-```bash
-docker run -it --rm \
-  -v /path/to/my/config:/etc/agent/config:ro \
-  -v /tmp/my-agent-secrets:/etc/agent/secrets:ro \
-  ghcr.io/cmlccie/agentic/simple-agent:latest \
-  chat
-```
-
-### Use with the Python OpenAI client
+- `temperature`, `top_p`, `max_tokens`/`max_completion_tokens`, `seed`, `stop`, and the penalties are applied on top of the agent's `model_settings`.
+- Images (`image_url` parts with URLs or data URIs) are passed to the model.
+- Client-side `tools` and other unrecognized fields are ignored, and `n` must be 1.
 
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-required")
-
-# Non-streaming
-response = client.chat.completions.create(
-    model="simple-agent",
-    messages=[{"role": "user", "content": "Explain the water cycle in one paragraph."}],
-)
-print(response.choices[0].message.content)
-
-# Streaming
+client = OpenAI(base_url="http://localhost:8080/v1", api_key="unused")
 stream = client.chat.completions.create(
     model="simple-agent",
-    messages=[{"role": "user", "content": "Write a haiku about autumn."}],
+    messages=[{"role": "user", "content": "What's the weather in Paris?"}],
     stream=True,
 )
 for chunk in stream:
-    if chunk.choices[0].delta.content:
-        print(chunk.choices[0].delta.content, end="", flush=True)
+    delta = chunk.choices[0].delta
+    if reasoning := getattr(delta, "reasoning_content", None):
+        print(reasoning, end="", flush=True)
+    if delta.content:
+        print(delta.content, end="", flush=True)
 ```
 
----
+## A2A
 
-## Container Images
+The A2A interface is built on the official [a2a-sdk](https://github.com/a2aproject/a2a-python) and implements A2A 1.0 over JSON-RPC, including streaming (`SendStreamingMessage`), `GetTask`, `ListTasks`, `CancelTask`, `SubscribeToTask`, and (optionally) push notifications. The A2A 0.3 method names (`message/send`, `message/stream`, `tasks/get`, ...) are accepted on the same endpoint for older clients, and the card advertises both protocol versions.
 
-Pre-built images are published to the GitHub Container Registry:
+### Messages and tasks
 
-```text
-ghcr.io/cmlccie/agentic/simple-agent:latest         # latest build from main
-ghcr.io/cmlccie/agentic/simple-agent:<version>      # specific release (e.g. 1.0.0)
-ghcr.io/cmlccie/agentic/simple-agent:<branch>-<sha> # specific commit
+A2A lets an agent answer with a direct **Message** (a quick reply, nothing to track) or a **Task** (tracked work with status updates, artifacts, cancellation, and polling). With the default `a2a.response_mode: auto`, each request gets the shape its work needs:
+
+- A quick answer that uses no tools is returned as a Message.
+- As soon as the agent calls a tool, or the run takes longer than `promote_after_seconds`, the exchange becomes a Task.
+- A Task goes `submitted` → `working` (status updates carrying the agent's activity) → the answer as a `response` artifact → `completed`.
+- A failed run becomes a `failed` task, and `CancelTask` stops the run and any tool call or delegated task in progress.
+
+Requests that set `returnImmediately`, or continue an existing task, always get a Task. `response_mode: message` and `response_mode: task` force one shape.
+
+Follow-up messages with the same `contextId` continue the conversation: the agent keeps the message history for each context, whether the earlier turns were Messages or Tasks.
+
+### Activity extension
+
+Working status updates are marked with the agent card extension `urn:agentic:a2a:activity:v1`. Their text part is a readable line for any A2A client, and their metadata carries the structured activity:
+
+```json
+{"urn:agentic:a2a:activity:v1": {"kind": "tool_call", "text": "get_forecast({\"city\": \"Paris\"})", "source": [], "tool": "get_forecast", "call_id": "call_1"}}
 ```
 
----
+`kind` is one of `thinking`, `note`, `tool_call`, `tool_result`, `status`, or `error`; `source` attributes activity relayed from delegated agents. The orchestrator's `A2AAgent` capability uses this extension to relay a worker's activity to its own callers.
 
-## Configuration Reference
+### Storage
 
-The container ships with default config at `/etc/agent/config/`. Override individual files or the entire directory with volume mounts or Kubernetes ConfigMap volumes.
+- **`memory`** (default) keeps tasks and conversation histories in the process, with no external dependencies. Both are bounded (`max_tasks`, `max_contexts`; oldest finished entries are evicted first) and are lost on restart.
+- **`sql`** keeps them in any SQLAlchemy async database. Put the DSN in the secret file named by `a2a.store.database_url_secret` (default `a2a.database_url`), for example `postgresql+asyncpg://user:pass@postgres:5432/agents` or `sqlite+aiosqlite:////data/agent.db` for single-node persistence. Tables are created on first use.
 
-### `agent.yaml` — Agent identity
+A task's live event stream (for `SendStreamingMessage`, `SubscribeToTask`, and `CancelTask`) lives in the replica that runs it, even with the `sql` store. Run the A2A interface as one replica, or give the Service session affinity (`sessionAffinity: ClientIP`) when scaling out. The OpenAI API is stateless and scales freely.
+
+### Example
+
+```bash
+curl -s localhost:8080/a2a -H 'Content-Type: application/json' -H 'A2A-Version: 1.0' -d '{
+  "jsonrpc": "2.0", "id": 1, "method": "SendMessage",
+  "params": {"message": {"messageId": "m1", "role": "ROLE_USER", "parts": [{"text": "Hello!"}]}}
+}'
+```
+
+From Python, use the a2a-sdk client (`A2ACardResolver`, `ClientFactory`), or point an orchestrator's `A2AAgent` capability at `http://<host>:8000/a2a`.
+
+## Configuration
+
+The container reads `/etc/agent/config/{agent,server}.yaml` and secret files from `/etc/agent/secrets` (override with `--config-dir` / `--secrets-dir` or `AGENT_CONFIG_DIR` / `AGENT_SECRETS_DIR`). Unknown keys in either file are errors, so typos fail loudly. Keys from earlier versions (`model: openai-compat` with `model_id`, orchestrator `a2a_servers`, `broker`, `interfaces.openai_compat`, `interfaces.ui`, `reload`) are still accepted and translated, with a warning that shows the new form.
+
+### agent.yaml
+
+A standard [Pydantic AI agent spec](https://pydantic.dev/docs/ai/agent-spec/):
 
 ```yaml
-name: my-agent                       # used as the model ID in /v1/models
-description: "Does X for callers"
-
-# ── Model ──────────────────────────────────────────────────────────────────────
-# Option A: first-class pydantic-ai provider (no secret files needed beyond API key)
-model: anthropic:claude-sonnet-4-6
-# model: openai:gpt-4o
-# model: google-gla:gemini-2.0-flash
-
-# Option B: OpenAI-compatible custom endpoint (LM Studio, Ollama, vLLM, etc.)
-# Requires secret files: openai_compatible.base_url, openai_compatible.api_key
-model: openai-compat
-model_id: my-local-model             # reported in /v1/models; passed to the API
-
+name: weather-agent            # also the model id on /v1/models
+description: Answers weather questions
+model: vllm:Qwen/Qwen3-32B
 instructions: |
-  You are a helpful assistant that specializes in X.
-  Always respond in plain language.
-
+  You answer questions about the weather. Use your tools for current data.
 model_settings:
-  temperature: 0.3
+  temperature: 0.2
   max_tokens: 4096
-
-# ── MCP Tool Servers (optional) ────────────────────────────────────────────────
 capabilities:
   - MCP:
-      url: http://tool-server-a/mcp
-      id: tools-a
-      # Optionally restrict which tools the agent can call:
-      # allowed_tools: [search, summarize]
-      # Inject secrets into request headers:
-      # headers:
-      #   Authorization: "Bearer ${MCP_TOKEN_A}"  # expanded from secrets dir
+      url: http://weather-mcp:8000/mcp
+      headers:
+        Authorization: Bearer ${WEATHER_MCP_TOKEN}
+  - Thinking:
+      effort: medium
+  - RepairToolArguments
 ```
 
-### `server.yaml` — Serving infrastructure
+**Models.** Use any Pydantic AI model string. For self-hosted OpenAI-compatible servers — vLLM, SGLang, and NVIDIA NIM — use `vllm:<served-model-name>`: it speaks Chat Completions, parses `reasoning_content` into thinking, and picks model-family profiles (Qwen, DeepSeek, Llama, Mistral, gpt-oss, ...). Its endpoint comes from the `model.base_url` / `model.api_key` secret files, or the `VLLM_BASE_URL` / `VLLM_API_KEY` environment variables. Hosted providers (`anthropic:`, `openai:`, `openai-chat:`, `google-gla:`) read their standard API-key environment variables.
+
+**Capabilities.** Besides the Pydantic AI built-ins (`MCP`, `Thinking`, `WebSearch`, `WebFetch`, `ToolSearch`, `PrefixTools`, `Instrumentation`, ...), `agent.yaml` can declare:
+
+| Capability                | Purpose                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------ |
+| `A2AAgent`                | Delegate to a remote A2A agent (see the [orchestrator](../orchestrator_agent/README.md))    |
+| `RepairToolArguments`     | Repair malformed JSON tool arguments (common with self-hosted models) before validation     |
+| `ToolOutputLimits`        | Truncate or summarize oversized tool results at the source                                  |
+| `ClampOversizedMessages`  | Clamp any single oversized message part                                                     |
+| `ClearToolResults`        | Replace old tool results with placeholders as history grows                                 |
+| `SlidingWindowCompaction` | Keep the most recent messages within a message or token budget                              |
+| `SummarizingCompaction`   | Summarize older history with a model                                                        |
+| `WarnNearLimits`          | Warn the model as it approaches iteration or token limits                                   |
+| `Planning`                | Give the model a task plan it maintains while working                                       |
+| `SpendLimits`             | Enforce token or cost budgets                                                               |
+
+All but `A2AAgent` come from [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/); see its docs for their arguments.
+
+MCP servers are connected for each run rather than held open, so a restarted MCP server never leaves the agent with a dead session.
+
+**Secret references.** `${NAME}` anywhere in the capability arguments is replaced with the secret file `NAME` (or its lowercase form), falling back to the environment variable `NAME`. An unresolved reference is a configuration error.
+
+### server.yaml
 
 ```yaml
-agent_card:
-  display_name: "My Agent" # shown in A2A agent card and API title
-  description: "Does X for callers"
+agent_card:                      # required: the A2A agent card
+  display_name: Weather Agent
+  description: Answers weather questions.
   version: "1.0.0"
-  icon_url: "" # optional URL to a PNG icon
-
-broker:
-  backend: memory # "memory" (default) | "redis"
-  # Redis requires secret file: task_broker.redis_url
-  # Default Redis URL if secret not present: redis://localhost:6379/0
+  icon_url: ""
+  documentation_url: ""
+  provider: {organization: Example, url: https://example.com}
+  skills:
+    - id: forecast
+      name: Forecasts
+      description: Current conditions and forecasts
+      tags: [weather]
+      examples: ["Will it rain in Oslo tomorrow?"]
 
 interfaces:
-  a2a: true # A2A protocol at /a2a/
-  openai_compat: true # OpenAI-compatible API at /v1/
+  openai: true
+  a2a: true
 
-reload:
-  drain_timeout: 30 # seconds to wait for in-flight requests before forcing reload
+a2a:
+  response_mode: auto            # auto | message | task
+  promote_after_seconds: 2.0
+  store:
+    backend: memory              # memory | sql
+    database_url_secret: a2a.database_url
+    max_tasks: 10000             # memory only
+    max_contexts: 1000           # memory only
+    max_history_messages: 200    # history kept per A2A context
+  push_notifications:
+    enabled: false               # the server calls client-supplied webhooks when enabled
+    allowed_hosts: []            # e.g. [hooks.example.com, .internal.example.com]
+
+streaming:
+  activity: summary              # off | summary | trace
+  thinking: true
+  max_args_chars: 200            # summary mode truncation
+  max_result_chars: 300
+  redact_keys: [password, secret, token, api_key, apikey, authorization, credential]
+  heartbeat_seconds: 15
+
+auth:
+  bearer_token_secret: null      # e.g. api_token
 ```
+
+**Streaming verbosity.** `summary` shows tool names with short argument and result previews, `trace` shows them in full, and `off` sends only the answer. Tool arguments and results are always redacted: values under keys containing any `redact_keys` entry become `***`. Thinking can be hidden separately with `thinking: false`.
+
+**Authentication.** When `auth.bearer_token_secret` names a secret file, `/v1/*` and `/a2a` require `Authorization: Bearer <token>` and the agent card declares the bearer scheme. Health probes and the agent card stay public. If the secret file is missing, requests are refused (fail closed).
 
 ### Secrets reference
 
-All secrets are read from individual files under `/etc/agent/secrets/`. File names match the secret keys (lowercased). On Kubernetes, these files are projected from a Secret volume.
+| File                          | Used for                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| `model.base_url`              | Endpoint of a self-hosted OpenAI-compatible model server (`vllm:` models)        |
+| `model.api_key`               | API key for that endpoint                                                        |
+| `a2a.database_url`            | DSN for `a2a.store.backend: sql`                                                 |
+| `<name from auth>`            | Bearer token clients must send, when `auth.bearer_token_secret` is set           |
+| `<name>` referenced as `${NAME}` | Anything in `agent.yaml` capability arguments (MCP and A2A headers, URLs, ...) |
 
-| File                         | Required for                                          |
-| ----------------------------- | ------------------------------------------------------ |
-| `openai_compatible.base_url` | `model: openai-compat`                                |
-| `openai_compatible.api_key`  | `model: openai-compat`                                |
-| `task_broker.redis_url`      | `broker.backend: redis`                               |
-| `<any_key>`                  | MCP header injection via `${ANY_KEY}` in `agent.yaml` |
+The earlier names `openai_compatible.base_url`, `openai_compatible.api_key`, and `task_broker.database_url` are still read.
 
-First-class providers (`model: anthropic:*`, `model: openai:*`, etc.) are not read from secret
-files -- supply credentials via the provider's standard environment variable
-(`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ...) directly on the container.
+## Hot reload
 
----
+The agent watches its config and secrets directories and reloads when anything changes (and on `SIGHUP`). A reload builds a new agent from the files and swaps it in:
 
-## Kubernetes Deployment
+- Requests already in progress finish with the agent they started with, and every new request uses the new one.
+- There is nothing to drain and no downtime; readiness stays up.
+- If the new configuration is invalid, the error is logged and the previous configuration keeps serving. Fix the files and the next change reloads.
+- Everything reloads live except `a2a.store`, which needs a restart.
 
-### Architecture overview
-
-```text
-              Kubernetes Cluster
-┌─────────────────────────────────────────────────────┐
-│                                                     │
-│  ConfigMap: my-agent-config                         │
-│  ├── agent.yaml   ─── mounted at /etc/agent/config  │
-│  └── server.yaml  ─┘                                │
-│                                                     │
-│  Secret: my-agent-secrets                           │
-│  └── (key files) ──── mounted at /etc/agent/secrets │
-│                                                     │
-│  Deployment: my-agent                               │
-│  └── Pod                                            │
-│      └── Container: simple-agent                    │
-│          ├── /health/live  ← liveness probe         │
-│          ├── /health/ready ← readiness probe        │
-│          ├── /v1/          ← OpenAI-compat API      │
-│          └── /a2a/         ← A2A protocol           │
-└─────────────────────────────────────────────────────┘
+```bash
+kubectl exec -n agents deploy/weather-agent -- kill -HUP 1   # e.g. after rotating a secret
 ```
 
-> **web-chat is not part of the production deployment.** Use `simple-agent web-chat` locally
-> or in a separate dev/staging container for browser-based testing.
+At startup an invalid configuration is fatal: the process exits with a clear error rather than serving with a broken config.
 
-### ConfigMap
+## Observability
+
+- **Logs** go to stderr, one line per record when not attached to a terminal (so Loki, Elasticsearch, and Cloud Logging can parse them), and with Rich formatting in a terminal.
+- **Traces** are exported over OTLP/HTTP when `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) is set. They cover every agent run, model request, and tool call (OpenTelemetry GenAI conventions), plus inbound HTTP requests and outbound HTTP calls. Trace context propagates to delegated A2A agents, so an orchestrator and its workers appear in one trace. Use the standard `OTEL_*` variables (`OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_HEADERS`, ...) to configure the exporter.
+
+## Kubernetes deployment
+
+```text
+ConfigMap  weather-agent-config   agent.yaml, server.yaml  → /etc/agent/config  (no subPath)
+Secret     weather-agent-secrets  model.base_url, ...      → /etc/agent/secrets (no subPath)
+Deployment weather-agent          ghcr.io/cmlccie/agentic/simple-agent
+Service    weather-agent          :8000  /v1  /a2a  /health
+```
+
+Mount the ConfigMap and Secret as whole directories. **Do not use `subPath`**: Kubernetes updates mounted ConfigMaps and Secrets by atomically swapping a symlink, and `subPath` mounts never see the update, so hot reload wouldn't happen.
 
 ```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: my-agent-config
+  name: weather-agent-config
   namespace: agents
 data:
   agent.yaml: |
-    name: my-agent
-    description: "A helpful assistant"
-    model: anthropic:claude-sonnet-4-6
-    instructions: |
-      You are a helpful assistant that specializes in answering questions about
-      internal company policy. Always cite the source document when you answer.
-    model_settings:
-      temperature: 0.2
-      max_tokens: 4096
+    name: weather-agent
+    model: vllm:Qwen/Qwen3-32B
+    instructions: You answer questions about the weather.
     capabilities:
       - MCP:
-          url: http://policy-docs-mcp/mcp
-          id: policy-docs
-          headers:
-            Authorization: "Bearer ${POLICY_MCP_TOKEN}"
-
+          url: http://weather-mcp:8000/mcp
   server.yaml: |
     agent_card:
-      display_name: "Policy Assistant"
-      description: "Answers questions about company policy"
-      version: "1.0.0"
-    broker:
-      backend: memory
-    interfaces:
-      a2a: true
-      openai_compat: true
-    reload:
-      drain_timeout: 30
-```
-
-> **Do not use `subPath`** in your volume mounts. Kubernetes uses an atomic symlink swap
-> to update ConfigMap volumes. `subPath`-mounted files are bind-mounted directly and never
-> receive live updates. Mount the entire directory without `subPath`.
-
-### Secret
-
-```yaml
+      display_name: Weather Agent
+      description: Answers weather questions.
+---
 apiVersion: v1
 kind: Secret
 metadata:
-  name: my-agent-secrets
+  name: weather-agent-secrets
   namespace: agents
 stringData:
-  # Custom OpenAI-compatible endpoint — only needed for model: openai-compat
-  "openai_compatible.base_url": "http://..."
-  "openai_compatible.api_key": "..."
-
-  # MCP server tokens — one file per token, named to match ${PLACEHOLDER} in agent.yaml
-  policy_mcp_token: "tok-..."
-
-  # Redis URL — only needed when broker.backend: redis
-  # "task_broker.redis_url": "redis://redis:6379/0"
-```
-
-First-class providers (`model: anthropic:*`, `model: openai:*`, etc.) read credentials from
-the provider's standard environment variable on the container, not from this Secret.
-
-### Deployment
-
-```yaml
+  model.base_url: http://vllm.inference.svc.cluster.local:8000/v1
+  model.api_key: not-needed
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: my-agent
-  namespace: agents
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: my-agent
-  template:
-    metadata:
-      labels:
-        app: my-agent
-    spec:
-      containers:
-        - name: agent
-          image: ghcr.io/cmlccie/agentic/simple-agent:latest
-          args:
-            - serve
-            - --agent-url=http://my-agent.agents.svc.cluster.local:8000
-          ports:
-            - name: http
-              containerPort: 8000
-          volumeMounts:
-            # Mount the entire directory — NO subPath
-            - name: config
-              mountPath: /etc/agent/config
-              readOnly: true
-            - name: secrets
-              mountPath: /etc/agent/secrets
-              readOnly: true
-          livenessProbe:
-            httpGet:
-              path: /health/live
-              port: 8000
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /health/ready
-              port: 8000
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 24 # 120 s window for drain + reload
-          resources:
-            requests:
-              cpu: "250m"
-              memory: "256Mi"
-            limits:
-              cpu: "1"
-              memory: "512Mi"
-      volumes:
-        - name: config
-          configMap:
-            name: my-agent-config # NO subPath — mount the full directory
-        - name: secrets
-          secret:
-            secretName: my-agent-secrets # NO subPath — mount the full directory
-```
-
-### Service
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: my-agent
-  namespace: agents
-spec:
-  selector:
-    app: my-agent
-  ports:
-    - name: http
-      port: 8000
-      targetPort: 8000
-```
-
----
-
-## Hot-Reload
-
-The agent watches `/etc/agent/config` and `/etc/agent/secrets` for changes. When a change is detected — or when the process receives `SIGHUP` — the agent reloads without downtime:
-
-```text
-RUNNING  ──(file change or SIGHUP)──►  DRAINING  ──(in-flight==0 or timeout)──►  RELOADING
-   ▲                                                                                  │
-   └──────────────────────────────(reload complete)───────────────────────────────────┘
-```
-
-During DRAINING and RELOADING:
-
-- `/health/ready` returns `503` — Kubernetes stops routing new traffic to this pod
-- `/health/live` continues to return `200` — the pod is not killed
-- In-flight requests are allowed to complete (up to `reload.drain_timeout` seconds)
-- New requests receive `503 Retry-After: 5`
-
-**What is hot-reloaded**: model, instructions, model settings, MCP tool servers, drain timeout.
-
-**What requires a pod restart**: enabling or disabling interfaces (`a2a`, `openai_compat`), changing `broker.backend`.
-
-### Triggering a reload manually
-
-```bash
-# Via SIGHUP (triggers reload even if files haven't changed — e.g. after secret rotation)
-kubectl exec -n agents deploy/my-agent -- kill -HUP 1
-
-# Via ConfigMap update (reload is triggered automatically by file watcher)
-kubectl edit ConfigMap my-agent-config -n agents
-```
-
----
-
-## Redis Broker (optional)
-
-By default the A2A broker uses in-memory storage — tasks are not shared across replicas and are lost if the pod restarts. For multi-replica deployments or durable task storage, switch to the Redis backend.
-
-### `server.yaml` change
-
-```yaml
-broker:
-  backend: redis
-```
-
-### Add the Redis URL secret
-
-```yaml
-# In your Secret:
-stringData:
-  "task_broker.redis_url": "redis://my-redis:6379/0"
-```
-
-### Deploy Redis alongside the agent
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: my-agent-redis
+  name: weather-agent
   namespace: agents
 spec:
   replicas: 1
   selector:
-    matchLabels:
-      app: my-agent-redis
+    matchLabels: {app: weather-agent}
   template:
     metadata:
-      labels:
-        app: my-agent-redis
+      labels: {app: weather-agent}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        seccompProfile: {type: RuntimeDefault}
       containers:
-        - name: redis
-          image: redis:7-alpine
-          ports:
-            - containerPort: 6379
+        - name: agent
+          image: ghcr.io/cmlccie/agentic/simple-agent:latest
+          args: [serve, --public-url=http://weather-agent.agents.svc.cluster.local:8000]
+          ports: [{name: http, containerPort: 8000}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /etc/agent/config, readOnly: true}
+            - {name: secrets, mountPath: /etc/agent/secrets, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          livenessProbe:
+            httpGet: {path: /health/live, port: http}
+          readinessProbe:
+            httpGet: {path: /health/ready, port: http}
           resources:
-            requests:
-              cpu: "100m"
-              memory: "64Mi"
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 512Mi}
+      volumes:
+        - {name: config, configMap: {name: weather-agent-config}}
+        - {name: secrets, secret: {secretName: weather-agent-secrets}}
+        - {name: tmp, emptyDir: {}}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: my-agent-redis
+  name: weather-agent
   namespace: agents
 spec:
-  selector:
-    app: my-agent-redis
-  ports:
-    - port: 6379
-      targetPort: 6379
+  selector: {app: weather-agent}
+  ports: [{name: http, port: 8000, targetPort: http}]
 ```
 
-Then set the secret:
+`--public-url` must be the address other agents and clients use to reach this one: the A2A card advertises it, and A2A clients send their requests there. The [orchestrator Terraform module](../../modules/terraform-kubernetes-orchestrator-agent/README.md) generates these resources for any agent of this runtime.
 
-```yaml
-stringData:
-  "task_broker.redis_url": "redis://my-agent-redis:6379/0"
+## Build
+
+The image builds on the project's Python base image, which contains the `agentic` package:
+
+```bash
+make python-base-image                                  # agentic/python:local
+make simple-agent BASE_IMAGE=agentic/python:local       # agentic/simple-agent:local
 ```
 
----
+## CLI reference
 
-## MCP Tool Servers
+The image's entrypoint is `simple-agent` (the same program is also installed as `orchestrator-agent`).
 
-Add MCP servers under `capabilities` in `agent.yaml`. The agent connects to each server at startup and reconnects on each reload cycle.
+| Command                 | Purpose                                                                  |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `simple-agent serve`    | Serve the OpenAI-compatible API, A2A, and health probes (the default)     |
+| `simple-agent chat`     | Chat with the agent in the terminal                                      |
+| `simple-agent web`      | Serve Pydantic AI's browser chat UI (for local use)                      |
 
-```yaml
-capabilities:
-  # Plain HTTP MCP server
-  - MCP:
-      url: http://my-tool-server/mcp
-      id: my-tools
-
-  # With restricted tool list
-  - MCP:
-      url: http://search-server/mcp
-      id: search
-      allowed_tools: [web_search, summarize]
-
-  # With authentication header using a secret file
-  - MCP:
-      url: http://secured-server/mcp
-      id: secured
-      headers:
-        Authorization: "Bearer ${MCP_TOKEN}" # expanded from /etc/agent/secrets/mcp_token
-```
-
-Secret files referenced in `${PLACEHOLDER}` patterns are read at load time. When the agent reloads (after a ConfigMap update or SIGHUP), the headers are re-expanded from the current secret files — so rotating a token requires only updating the Secret and triggering a reload.
-
----
-
-## CLI Reference
-
-```text
-$ simple-agent --help
-
- Usage: simple-agent [OPTIONS] COMMAND [ARGS]...
-
- Simple Agent
-
-╭─ Commands ─────────────────────────────────────────────────────────────────╮
-│ serve     Serve all configured interfaces (default)                        │
-│ web-chat  Serve the web chat UI                                            │
-│ chat      Interactive terminal chat                                        │
-╰────────────────────────────────────────────────────────────────────────────╯
-```
-
-```shell
-$ simple-agent serve --help
-
- Usage: simple-agent serve [OPTIONS]
-
- Start the FastAPI server with all configured interfaces.
-
-╭─ Options ──────────────────────────────────────────────────────────────────╮
-│ --host           TEXT  Bind host [default: 0.0.0.0]                        │
-│ --port           INT   Bind port [default: 8000]                           │
-│ --config-dir     PATH  Config directory [default: /etc/agent/config]       │
-│ --secrets-dir    PATH  Secrets directory [default: /etc/agent/secrets]     │
-│ --agent-url      TEXT  Public URL for A2A agent card                       │
-│ --log-level      TEXT  Log level [default: info]                           │
-╰────────────────────────────────────────────────────────────────────────────╯
-```
-
-```shell
-$ simple-agent web-chat --help
-
- Usage: simple-agent web-chat [OPTIONS]
-
- Serve the Pydantic AI web chat UI for the configured agent.
-
-╭─ Options ──────────────────────────────────────────────────────────────────╮
-│ --host           TEXT  Bind host [default: 0.0.0.0]                        │
-│ --port           INT   Bind port [default: 8000]                           │
-│ --config-dir     PATH  Config directory [default: /etc/agent/config]       │
-│ --secrets-dir    PATH  Secrets directory [default: /etc/agent/secrets]     │
-│ --log-level      TEXT  Log level [default: info]                           │
-╰────────────────────────────────────────────────────────────────────────────╯
-```
-
-```shell
-$ simple-agent chat --help
-
- Usage: simple-agent chat [OPTIONS]
-
- Run an interactive terminal chat session with the configured agent.
-
-╭─ Options ──────────────────────────────────────────────────────────────────╮
-│ --config-dir     PATH  Config directory [default: /etc/agent/config]       │
-│ --secrets-dir    PATH  Secrets directory [default: /etc/agent/secrets]     │
-│ --log-level      TEXT  Log level [default: warning]                        │
-╰────────────────────────────────────────────────────────────────────────────╯
-```
+`serve` options: `--host`, `--port` (8000), `--config-dir`, `--secrets-dir`, `--public-url` (alias `--agent-url`, env `AGENT_PUBLIC_URL`), `--watch/--no-watch`, and `--log-level`. Run any command with `--help` for details.

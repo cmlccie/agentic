@@ -1,32 +1,34 @@
+# server.yaml — how the agent is served.
+# Reference: images/simple_agent/README.md#serveryaml
 agent_card:
-  display_name: "Simple Agent"
-  description: "A general-purpose AI assistant with OpenAI-compatible, A2A, and web UI interfaces."
+  display_name: Simple Agent
+  description: A general-purpose AI assistant with OpenAI-compatible and A2A interfaces.
   version: "1.0.0"
-  icon_url: ""
-  documentation_url: ""
-  provider:
-    organization: ""
-    url: ""
   skills: []
-  # Example skill entry:
   # skills:
   #   - id: general-assistant
   #     name: General Assistant
   #     description: Answers questions and completes tasks across a wide range of topics.
   #     tags: [general, assistant]
   #     examples:
-  #       - "Summarize this document"
-  #       - "Write a Python script that..."
-  #     input_modes: [text/plain]
-  #     output_modes: [text/plain]
-
-broker:
-  backend: memory  # "memory" | "redis"
+  #       - Summarize this document
 
 interfaces:
-  a2a: true
-  openai_compat: true
-  ui: true
+  openai: true # /v1/models, /v1/chat/completions
+  a2a: true # /a2a and the agent card
 
-reload:
-  drain_timeout: 30  # seconds to wait for in-flight tasks before forcing reload
+a2a:
+  response_mode: auto # auto | message | task
+  promote_after_seconds: 2.0 # auto: become a task after this long (or on the first tool call)
+  store:
+    backend: memory # memory | sql (DSN in the secret file a2a.database_url)
+  push_notifications:
+    enabled: false
+
+streaming:
+  activity: summary # off | summary | trace
+  thinking: true
+  heartbeat_seconds: 15
+
+# auth:
+#   bearer_token_secret: api_token # require "Authorization: Bearer <secret file api_token>"

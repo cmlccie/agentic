@@ -1,5 +1,7 @@
 # Multi-Interface Pydantic AI Agent Container — Architecture Design
 
+> **Status: superseded.** This was the original design for `src/agentic/simple_agent`. The runtime has since been consolidated with the orchestrator into `src/agentic/agent`; see [agent_runtime_design.md](agent_runtime_design.md) for the current design and the decisions that changed (no drain state machine, a2a-sdk instead of fasta2a, an in-house OpenAI API, `vllm:` models instead of the `openai-compat` sentinel).
+
 ## Design Principles
 
 - **Single process, single port** — one FastAPI root app, all interfaces mounted as ASGI sub-apps or routers
