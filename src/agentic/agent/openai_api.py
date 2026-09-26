@@ -25,13 +25,14 @@ messages is dropped so the agent's activity isn't fed back to the model.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
-from typing import Any
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, TypeVar
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -66,8 +67,16 @@ from .streaming import (
 
 log = logging.getLogger(__name__)
 
-_THINK_BLOCK = re.compile(r"<think>.*?</think>\s*", re.DOTALL | re.IGNORECASE)
+#: Reasoning that chat UIs send back inside assistant messages: ``<think>`` blocks
+#: and Open WebUI's ``<details type="reasoning">`` blocks.
+_REASONING_BLOCKS = re.compile(
+    r"<think>.*?</think>\s*|<details\b[^>]*type=[\"']reasoning[\"'][^>]*>.*?</details>\s*",
+    re.DOTALL | re.IGNORECASE,
+)
 _NO_RETRY = {"x-should-retry": "false"}
+_DISCONNECT_POLL_SECONDS = 1.0
+
+T = TypeVar("T")
 
 
 def failure_message(exc: BaseException) -> str:
@@ -144,6 +153,7 @@ class ChatCompletionRequest(BaseModel):
     stop: str | list[str] | None = None
     presence_penalty: float | None = None
     frequency_penalty: float | None = None
+    conversation_id: str | None = Field(default=None, max_length=256)
 
     def model_settings(self) -> ModelSettings | None:
         """Sampling parameters to apply on top of the agent's own settings."""
@@ -173,7 +183,7 @@ def _text_of(content: Any) -> str:
         return content
     if isinstance(content, list):
         return "\n".join(
-            p.get("text", "")
+            (p.get("text") or "")
             for p in content
             if isinstance(p, dict) and p.get("type") in ("text", "input_text")
         )
@@ -190,7 +200,7 @@ def _user_content(content: Any) -> str | list[UserContent]:
             continue
         kind = p.get("type")
         if kind in ("text", "input_text"):
-            parts.append(p.get("text", ""))
+            parts.append((p.get("text") or ""))
         elif kind in ("image_url", "input_image"):
             image = p.get("image_url")
             url = image.get("url") if isinstance(image, dict) else image
@@ -211,7 +221,7 @@ def _user_content(content: Any) -> str | list[UserContent]:
 
 
 def _strip_reasoning(text: str) -> str:
-    return _THINK_BLOCK.sub("", text).strip()
+    return _REASONING_BLOCKS.sub("", text).strip()
 
 
 def to_pydantic_ai(
@@ -226,12 +236,32 @@ def to_pydantic_ai(
     Raises:
         OpenAIError: For malformed or unsupported messages.
     """
+    try:
+        return _convert(messages)
+    except OpenAIError:
+        raise
+    except (ValueError, TypeError, AttributeError, KeyError) as exc:
+        raise OpenAIError(f"invalid messages: {exc}", param="messages") from exc
+
+
+def _convert(
+    messages: list[dict[str, Any]],
+) -> tuple[str | list[UserContent], list[ModelMessage]]:
     *earlier, last = messages
     if last.get("role") != "user":
         raise OpenAIError("the last message must have role 'user'", param="messages")
 
     history: list[ModelMessage] = []
     tool_names: dict[str, str] = {}
+    unanswered: set[str] = set()
+
+    def require_tool_results() -> None:
+        if unanswered:
+            raise OpenAIError(
+                "assistant tool_calls must be followed by tool messages with their "
+                f"results (missing: {', '.join(sorted(unanswered))})",
+                param="messages",
+            )
 
     def add_request(part: ModelRequestPart) -> None:
         if history and isinstance(history[-1], ModelRequest):
@@ -254,6 +284,7 @@ def to_pydantic_ai(
             case "system" | "developer":
                 add_request(SystemPromptPart(content=_text_of(content)))
             case "user":
+                require_tool_results()
                 add_request(UserPromptPart(content=_user_content(content)))
             case "assistant":
                 parts: list[ModelResponsePart] = []
@@ -263,6 +294,7 @@ def to_pydantic_ai(
                     function = call.get("function") or {}
                     call_id = call.get("id") or f"call_{index}_{len(parts)}"
                     tool_names[call_id] = function.get("name", "tool")
+                    unanswered.add(call_id)
                     parts.append(
                         ToolCallPart(
                             tool_name=function.get("name", "tool"),
@@ -273,6 +305,7 @@ def to_pydantic_ai(
                 add_response(parts)
             case "tool" | "function":
                 call_id = message.get("tool_call_id") or ""
+                unanswered.discard(call_id)
                 add_request(
                     ToolReturnPart(
                         tool_name=message.get("name")
@@ -286,6 +319,7 @@ def to_pydantic_ai(
                     f"unsupported message role '{role}'", param="messages"
                 )
 
+    require_tool_results()
     return _user_content(last.get("content")), history
 
 
@@ -350,6 +384,7 @@ async def _events(
         prompt,
         message_history=history or None,
         model_settings=request.model_settings(),
+        conversation_id=request.conversation_id,
     ) as events:
         async for item in activities(events, snapshot.server.streaming):
             yield item
@@ -456,6 +491,50 @@ async def stream(
 # --------------------------------------------------------------------------------------
 
 
+class ClientDisconnected(Exception):
+    """The client went away before a non-streaming response was ready."""
+
+
+async def _unless_disconnected(request: Request, work: Awaitable[T]) -> T:
+    """Await ``work``, cancelling it if the client disconnects meanwhile.
+
+    Streaming responses are cancelled by the server on disconnect; a plain
+    request handler is not, so without this a client that gives up would
+    leave the agent (and its tools) running to completion.
+    """
+    task = asyncio.ensure_future(work)
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=_DISCONNECT_POLL_SECONDS)
+            if done:
+                return task.result()
+            if await request.is_disconnected():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                raise ClientDisconnected()
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+#: Headers that identify a chat across requests (the OpenAI API is stateless).
+CONVERSATION_HEADERS = ("x-conversation-id", "x-openwebui-chat-id")
+
+
+def conversation_id_from(request: Request) -> str | None:
+    """A client-supplied conversation id, if any (see `CONVERSATION_HEADERS`).
+
+    With one, an orchestrator reuses each delegated agent's A2A context across
+    the turns of a chat, so remote agents remember earlier turns and tasks
+    waiting for input can be continued.
+    """
+    for header in CONVERSATION_HEADERS:
+        if value := request.headers.get(header, "").strip():
+            return value[:256]
+    return None
+
+
 def build_openai_router(current: Callable[[], Snapshot]) -> APIRouter:
     """Build the OpenAI-compatible routes; each request uses the current snapshot."""
     router = APIRouter(tags=["OpenAI compatible"])
@@ -505,6 +584,7 @@ def build_openai_router(current: Callable[[], Snapshot]) -> APIRouter:
             ).response()
         if chat.n != 1:
             return OpenAIError("only n=1 is supported", param="n").response()
+        chat.conversation_id = chat.conversation_id or conversation_id_from(request)
 
         snapshot = current()
         try:
@@ -519,7 +599,11 @@ def build_openai_router(current: Callable[[], Snapshot]) -> APIRouter:
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
         try:
-            return JSONResponse(await complete(snapshot, chat))
+            return JSONResponse(
+                await _unless_disconnected(request, complete(snapshot, chat))
+            )
+        except ClientDisconnected:
+            return JSONResponse({}, status_code=499)
         except OpenAIError as exc:
             return exc.response()
         except Exception as exc:

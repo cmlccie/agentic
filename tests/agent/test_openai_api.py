@@ -532,3 +532,124 @@ async def test_http_client_disconnect_cancels_the_run(tmp_path: Path) -> None:
                 break
             await asyncio.sleep(0.05)
     assert SLOW_STATE == {"started": 1, "cancelled": 1, "finished": 0}
+
+
+# --------------------------------------------------------------------------------------
+# Hardening (from review)
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "messages, fragment",
+    [
+        (
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": "data:image/png,abc"},
+                        }
+                    ],
+                }
+            ],
+            "invalid messages",
+        ),
+        (
+            [
+                {"role": "user", "content": "q"},
+                {"role": "assistant", "content": "", "tool_calls": {"id": "x"}},
+                {"role": "user", "content": "q2"},
+            ],
+            "invalid messages",
+        ),
+        (["not a dict", {"role": "user", "content": "q"}], "'messages.0'"),
+        (
+            [
+                {"role": "user", "content": "q"},
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {"id": "c9", "function": {"name": "t", "arguments": "{}"}}
+                    ],
+                },
+                {"role": "user", "content": "q2"},
+            ],
+            "missing: c9",
+        ),
+    ],
+)
+async def test_malformed_messages_are_400s_not_500s(
+    tmp_path: Path, messages: list[Any], fragment: str
+) -> None:
+    use_model("main", scripted_model())
+    async with RunningApp(make_app(tmp_path, AGENT)) as running:
+        for stream in (False, True):
+            response = await running.client.post(
+                "/v1/chat/completions",
+                json={"model": "x", "stream": stream, "messages": messages},
+            )
+            assert response.status_code == 400, response.text
+            assert fragment in response.json()["error"]["message"]
+
+
+def test_null_text_parts_are_treated_as_empty() -> None:
+    prompt, _ = to_pydantic_ai(
+        [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": None},
+                    {"type": "text", "text": "hi"},
+                ],
+            }
+        ]
+    )
+    assert prompt == "\nhi"
+
+
+def test_open_webui_reasoning_details_are_stripped() -> None:
+    _, history = to_pydantic_ai(
+        [
+            {"role": "user", "content": "q"},
+            {
+                "role": "assistant",
+                "content": '<details type="reasoning" done="true" duration="2">\n'
+                "<summary>Thought for 2 seconds</summary>\n→ tool(...)\n</details>\nAnswer",
+            },
+            {"role": "user", "content": "q2"},
+        ]
+    )
+    assert history[1].parts == [TextPart("Answer")]
+
+
+async def test_non_streaming_disconnect_cancels_the_run(tmp_path: Path) -> None:
+    import asyncio
+
+    from .conftest import SLOW_STATE, Server, free_port
+
+    use_model("main", scripted_model(tool="slow", args={"seconds": 30}))
+    app = make_app(tmp_path, AGENT)
+    with Server(app, free_port()) as server:
+        async with httpx.AsyncClient(base_url=server.url, timeout=10) as client:
+            request = asyncio.create_task(
+                client.post(
+                    "/v1/chat/completions",
+                    json={
+                        "model": "x",
+                        "messages": [{"role": "user", "content": "hi"}],
+                    },
+                )
+            )
+            for _ in range(100):
+                if SLOW_STATE["started"]:
+                    break
+                await asyncio.sleep(0.05)
+            request.cancel()
+            await asyncio.gather(request, return_exceptions=True)
+        for _ in range(100):
+            if SLOW_STATE["cancelled"]:
+                break
+            await asyncio.sleep(0.05)
+    assert SLOW_STATE == {"started": 1, "cancelled": 1, "finished": 0}

@@ -52,3 +52,8 @@ Push notifications are off (they make the server call client-supplied URLs); whe
 - The answer is not token-streamed (see above).
 - Changing `a2a.store` requires a restart.
 - MCP servers using the stdio transport start a process per run.
+- On shutdown, running tasks are cancelled without a final state, so with the `sql` store they remain `working`.
+- A `CancelTask` racing a task's completion can mark a just-completed task `canceled` (the a2a-sdk has no terminal-state guard).
+- The a2a-sdk's SQL task table limits ids to 36 characters; clients that send longer `contextId`s can only use the `memory` store.
+- A reload rebuilds `A2AAgent` toolsets, so cached agent cards and remote contexts start fresh.
+- Remote-context reuse keys on the client-supplied conversation id; clients that share an orchestrator should not share conversation ids.

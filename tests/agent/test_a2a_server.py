@@ -451,22 +451,49 @@ def test_trim_history_cuts_only_at_turn_boundaries() -> None:
 
 
 @pytest.mark.parametrize(
-    "hosts, url, allowed",
+    "enabled, hosts, url, allowed",
     [
-        ([], "https://hooks.example.com/x", True),
-        ([], "file:///etc/passwd", False),
-        ([], "ftp://example.com", False),
-        (["hooks.example.com"], "https://hooks.example.com/x", True),
-        (["hooks.example.com"], "https://evil.com/x", False),
-        ([".example.com"], "https://a.b.example.com/x", True),
-        ([".example.com"], "https://example.com.evil.com/x", False),
+        (False, [], "https://hooks.example.com/x", False),
+        (True, [], "https://hooks.example.com/x", True),
+        (True, [], "file:///etc/passwd", False),
+        (True, [], "ftp://example.com", False),
+        (True, [], "http://127.0.0.1:8080/x", False),
+        (True, [], "http://10.1.2.3/x", False),
+        (True, [], "http://169.254.169.254/latest/meta-data", False),
+        (True, [], "http://[::1]/x", False),
+        (True, [], "http://localhost/x", False),
+        (True, ["hooks.example.com"], "https://hooks.example.com/x", True),
+        (True, ["hooks.example.com"], "https://evil.com/x", False),
+        (True, [".example.com"], "https://a.b.example.com/x", True),
+        (True, [".example.com"], "https://example.com.evil.com/x", False),
+        (True, ["10.1.2.3"], "http://10.1.2.3/x", True),
     ],
 )
-async def test_push_url_policy(hosts: list[str], url: str, allowed: bool) -> None:
-    validate = push_url_validator(
-        PushNotificationsConfig(enabled=True, allowed_hosts=hosts)
-    )
-    assert await validate(url) is allowed
+async def test_push_url_policy(
+    enabled: bool, hosts: list[str], url: str, allowed: bool
+) -> None:
+    config = PushNotificationsConfig(enabled=enabled, allowed_hosts=hosts)
+    assert await push_url_validator(config)(url) is allowed
+
+
+async def test_inline_push_configs_are_refused_when_disabled(tmp_path: Path) -> None:
+    """The a2a-sdk stores inline push configs even when the card disables push."""
+    from a2a.types import TaskPushNotificationConfig
+
+    use_model("main", scripted_model(tool="forecast", args={"city": "a"}))
+    async with RunningApp(make_app(tmp_path, AGENT, server())) as running:
+        client = await a2a_client(running, streaming=False)
+        request = SendMessageRequest(
+            message=new_text_message("hi", role=Role.ROLE_USER),
+            configuration=SendMessageConfiguration(
+                task_push_notification_config=TaskPushNotificationConfig(
+                    url="https://hooks.example.com/x"
+                )
+            ),
+        )
+        with pytest.raises(Exception, match="(?i)push notification url"):
+            async for _ in client.send_message(request):
+                pass
 
 
 def test_agent_card_fields_are_plain_strings_under_pure_python_protobuf() -> None:
@@ -491,3 +518,38 @@ def test_agent_card_fields_are_plain_strings_under_pure_python_protobuf() -> Non
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "['JSONRPC']"
+
+
+async def test_client_leaving_before_a_quick_reply_does_not_leak(
+    tmp_path: Path,
+) -> None:
+    """A streaming consumer cancelled before the reply shape is decided."""
+    from a2a.server.context import ServerCallContext
+
+    async def stream(messages: Any, info: AgentInfo) -> AsyncIterator[str]:
+        await asyncio.sleep(0.3)
+        yield "late but quick"
+
+    use_model("main", FunctionModel(stream_function=stream))
+    app = make_app(tmp_path, AGENT, server(promote_after_seconds=5))
+    async with RunningApp(app) as running:
+        handler = running.app.state.a2a.handler
+        registry = handler._active_task_registry._active_tasks
+
+        async def consume() -> None:
+            request = SendMessageRequest(
+                message=new_text_message("hi", role=Role.ROLE_USER)
+            )
+            async for _ in handler.on_message_send_stream(request, ServerCallContext()):
+                pass
+
+        consumer = asyncio.create_task(consume())
+        await asyncio.sleep(0.1)
+        consumer.cancel()  # the client disconnects
+        await asyncio.gather(consumer, return_exceptions=True)
+        for _ in range(40):
+            await asyncio.sleep(0.05)
+            if not registry:
+                break
+        assert registry == {}
+        assert getattr(handler, "_awaiting_reply", {}) == {}

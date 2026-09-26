@@ -118,7 +118,7 @@ _metadata = MetaData()
 _contexts = Table(
     "agent_contexts",
     _metadata,
-    Column("context_id", String(64), primary_key=True),
+    Column("context_id", String(255), primary_key=True),
     Column("messages", Text, nullable=False),
     Column("updated_at", Float, nullable=False),
 )
@@ -190,22 +190,24 @@ class BoundedMemoryTaskStore(TaskStore):
     def __init__(self, max_tasks: int = 10_000) -> None:
         self._store = InMemoryTaskStore()
         self._max_tasks = max_tasks
-        self._order: OrderedDict[str, tuple[ServerCallContext, bool]] = OrderedDict()
+        self._running: dict[str, ServerCallContext] = {}
+        self._finished: OrderedDict[str, ServerCallContext] = OrderedDict()
 
     async def save(self, task: Task, context: ServerCallContext) -> None:
         await self._store.save(task, context)
-        self._order[task.id] = (context, task.status.state in TERMINAL_STATES)
-        self._order.move_to_end(task.id)
-        await self._evict()
-
-    async def _evict(self) -> None:
-        excess = len(self._order) - self._max_tasks
-        if excess <= 0:
-            return
-        finished = [tid for tid, (_, done) in self._order.items() if done][:excess]
-        for task_id in finished:
-            context, _ = self._order.pop(task_id)
-            await self._store.delete(task_id, context)
+        if task.status.state in TERMINAL_STATES:
+            self._running.pop(task.id, None)
+            self._finished[task.id] = context
+            self._finished.move_to_end(task.id)
+        else:
+            self._finished.pop(task.id, None)
+            self._running[task.id] = context
+        while (
+            self._finished
+            and len(self._running) + len(self._finished) > self._max_tasks
+        ):
+            task_id, oldest = self._finished.popitem(last=False)
+            await self._store.delete(task_id, oldest)
 
     async def get(self, task_id: str, context: ServerCallContext) -> Task | None:
         return await self._store.get(task_id, context)
@@ -216,5 +218,6 @@ class BoundedMemoryTaskStore(TaskStore):
         return await self._store.list(params, context)
 
     async def delete(self, task_id: str, context: ServerCallContext) -> None:
-        self._order.pop(task_id, None)
+        self._running.pop(task_id, None)
+        self._finished.pop(task_id, None)
         await self._store.delete(task_id, context)

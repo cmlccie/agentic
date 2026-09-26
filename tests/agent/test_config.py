@@ -276,6 +276,17 @@ class TestModelResolution:
         assert str(model.client.base_url).rstrip("/") == "http://vllm:8000/v1"
         assert model.client.api_key == "k"
 
+    def test_endpoint_secrets_never_redirect_hosted_providers(
+        self, tmp_path: Path
+    ) -> None:
+        secrets = secrets_with(tmp_path, {"model.base_url": "http://vllm:8000/v1"})
+        for model in (
+            "openai:gpt-6-sol",
+            "openai-chat:gpt-6-sol",
+            "anthropic:claude-sonnet-5",
+        ):
+            assert resolve_model(model, secrets) == model
+
     def test_vllm_from_environment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

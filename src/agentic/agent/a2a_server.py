@@ -33,9 +33,11 @@ always get a task. ``response_mode: message`` / ``task`` force one shape.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import time
 import weakref
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -120,6 +122,9 @@ _THINKING_FLUSH_CHARS = 2000
 #: How often the executor re-checks elapsed time and flushes thinking.
 _TICK_SECONDS = 1.0
 _PUSH_TIMEOUT = httpx.Timeout(30.0)
+#: Bookkeeping bounds for releasing Message replies after a client disconnect.
+_MAX_REPLIED = 1024
+_RELEASE_WAIT_SECONDS = 3600.0
 
 
 # --------------------------------------------------------------------------------------
@@ -224,6 +229,7 @@ class _Exchange:
         self.buffered: list[Activity] = []
         self.thinking: list[str] = []
         self.thinking_source: tuple[str, ...] = ()
+        self.last_flush = 0.0
 
     @property
     def promoted(self) -> bool:
@@ -261,10 +267,19 @@ class _Exchange:
         await self.flush_thinking()
         await self._status(render(item), item)
 
-    async def flush_thinking(self) -> None:
-        """Send accumulated thinking as one status update."""
+    async def flush_thinking(self, min_interval: float = 0.0) -> None:
+        """Send accumulated thinking as one status update.
+
+        Args:
+            min_interval: Skip the flush if the previous one was more recent
+                than this (periodic flushes stay batched).
+        """
         if self.updater is None or not self.thinking:
             return
+        now = time.monotonic()
+        if now - self.last_flush < min_interval:
+            return
+        self.last_flush = now
         text, self.thinking = "".join(self.thinking), []
         item = Activity("thinking", text, self.thinking_source)
         await self._status(render(item) if item.source else text, item)
@@ -311,6 +326,8 @@ class AgentRequestExecutor(AgentExecutor):
     def __init__(self, current: Callable[[], Snapshot], history: HistoryStore) -> None:
         self._current = current
         self._history = history
+        #: Called with the request's task id after a direct Message reply.
+        self.on_message_reply: Callable[[str], None] = lambda task_id: None
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
@@ -366,7 +383,7 @@ class AgentRequestExecutor(AgentExecutor):
                             if slow or working:
                                 await exchange.promote()
                         if item is HEARTBEAT:
-                            await exchange.flush_thinking()
+                            await exchange.flush_thinking(min_interval=_TICK_SECONDS)
                         else:
                             await exchange.activity(item)
             except Exception as exc:
@@ -381,6 +398,8 @@ class AgentRequestExecutor(AgentExecutor):
                 return
             await self._history.save(context_id, answer.messages)
         await exchange.finish(answer)
+        if not exchange.promoted and context.task_id:
+            self.on_message_reply(context.task_id)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Mark the task canceled; the SDK then cancels the running `execute`."""
@@ -409,6 +428,13 @@ class AgentRequestHandler(DefaultRequestHandler):
     def __init__(self, *, card: Callable[[], AgentCard], **kwargs: Any) -> None:
         self._card = card
         super().__init__(agent_card=card(), **kwargs)
+        # Message replies whose streaming client left before seeing any event:
+        # released once the executor reports the reply (bounded bookkeeping).
+        self._awaiting_reply: dict[str, asyncio.Event] = {}
+        self._replied: OrderedDict[str, None] = OrderedDict()
+        executor = kwargs["agent_executor"]
+        if isinstance(executor, AgentRequestExecutor):
+            executor.on_message_reply = self._message_replied
 
     @property
     def _agent_card(self) -> AgentCard:  # read by the base class's capability checks
@@ -438,8 +464,37 @@ class AgentRequestHandler(DefaultRequestHandler):
                 last = event
                 yield event
         finally:
+            task_id = params.message.task_id
             if isinstance(last, Message):
-                await self._release(params.message.task_id)
+                await self._release(task_id)
+            elif last is None and task_id:
+                # The client left before the reply shape was decided; if the
+                # executor ends up replying with a Message, release it then.
+                task = asyncio.create_task(self._release_after_reply(task_id))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+
+    def _message_replied(self, task_id: str) -> None:
+        if (event := self._awaiting_reply.get(task_id)) is not None:
+            event.set()
+            return
+        self._replied[task_id] = None
+        while len(self._replied) > _MAX_REPLIED:
+            self._replied.popitem(last=False)
+
+    async def _release_after_reply(self, task_id: str) -> None:
+        if self._replied.pop(task_id, "missing") is None:
+            await self._release(task_id)
+            return
+        event = self._awaiting_reply[task_id] = asyncio.Event()
+        try:
+            await asyncio.wait_for(event.wait(), _RELEASE_WAIT_SECONDS)
+        except TimeoutError:
+            return  # became a task (cleaned up by the SDK) or is still running
+        finally:
+            self._awaiting_reply.pop(task_id, None)
+        await asyncio.sleep(0)  # let the executor return first
+        await self._release(task_id)
 
 
 # --------------------------------------------------------------------------------------
@@ -447,21 +502,43 @@ class AgentRequestHandler(DefaultRequestHandler):
 # --------------------------------------------------------------------------------------
 
 
-def push_url_validator(config: PushNotificationsConfig) -> Callable[[str], Any]:
-    """Build the push-notification URL policy: http(s) only, allowed hosts only.
+def _is_internal_host(host: str) -> bool:
+    """Whether ``host`` is ``localhost`` or a loopback/private/link-local IP literal."""
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False  # a hostname; restrict those with allowed_hosts
+    return not address.is_global
 
-    An ``allowed_hosts`` entry matches the host exactly, or any subdomain when it
-    starts with a dot (``.example.com``). With no entries every host is allowed.
+
+def push_url_validator(config: PushNotificationsConfig) -> Callable[[str], Any]:
+    """Build the push-notification URL policy.
+
+    Push notifications make the server POST to client-supplied URLs, so:
+
+    - every URL is refused while ``push_notifications.enabled`` is false (the
+      a2a-sdk accepts inline push configs on SendMessage regardless of the
+      card's capabilities);
+    - only ``http``/``https`` URLs are accepted;
+    - with ``allowed_hosts``, the host must match an entry exactly, or be a
+      subdomain of an entry that starts with a dot (``.example.com``);
+    - without ``allowed_hosts``, loopback, private, and link-local IP addresses
+      and ``localhost`` are refused. Hostnames are not resolved, so use
+      ``allowed_hosts`` to restrict destinations fully.
     """
     allowed = [h.lower() for h in config.allowed_hosts]
 
     async def validate(url: str) -> bool:
+        if not config.enabled:
+            return False
         parts = urlsplit(url)
         host = (parts.hostname or "").lower()
         if parts.scheme not in ("http", "https") or not host:
             return False
         if not allowed:
-            return True
+            return not _is_internal_host(host)
         return any(
             host == h or (h.startswith(".") and host.endswith(h)) for h in allowed
         )

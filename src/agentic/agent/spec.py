@@ -91,8 +91,9 @@ CUSTOM_CAPABILITIES: tuple[type[AbstractCapability[Any]], ...] = (
 _BASE_URL_SECRETS = ("model.base_url", "openai_compatible.base_url")
 _API_KEY_SECRETS = ("model.api_key", "openai_compatible.api_key")
 
-#: Providers whose endpoint may be overridden by the model secrets above.
-_ENDPOINT_PROVIDERS = frozenset({"vllm", "openai"})
+#: Providers whose endpoint comes from the model secrets above. Hosted providers
+#: (``openai:``, ``anthropic:``, ...) always use their own endpoints and keys.
+_ENDPOINT_PROVIDERS = frozenset({"vllm"})
 
 #: Top-level keys `agent.yaml` accepts (``$schema`` is the alias of json_schema_path).
 _SPEC_KEYS = (frozenset(AgentSpec.model_fields) - {"json_schema_path"}) | {"$schema"}
@@ -180,12 +181,7 @@ def resolve_model(model: str | None, secrets: Secrets) -> Model | str | None:
     if model is None:
         return None
     factory = endpoint_provider_factory(secrets)
-    if factory is None or model.partition(":")[0] not in {
-        "vllm",
-        "openai",
-        "openai-chat",
-        "openai-responses",
-    }:
+    if factory is None or model.partition(":")[0] not in _ENDPOINT_PROVIDERS:
         return model
     try:
         return infer_model(model, provider_factory=factory)

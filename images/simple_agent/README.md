@@ -95,6 +95,8 @@ Other request details:
 - `temperature`, `top_p`, `max_tokens`/`max_completion_tokens`, `seed`, `stop`, and the penalties are applied on top of the agent's `model_settings`.
 - Images (`image_url` parts with URLs or data URIs) are passed to the model.
 - Client-side `tools` and other unrecognized fields are ignored, and `n` must be 1.
+- A conversation id in the `X-Conversation-Id` header (Open WebUI's `X-OpenWebUI-Chat-Id` also works) or a `conversation_id` body field ties the turns of a chat together. An orchestrator uses it to continue each delegated agent's A2A context across turns.
+- Malformed messages get a `400` naming the problem, including assistant `tool_calls` without matching `tool` results.
 
 ```python
 from openai import OpenAI
@@ -240,7 +242,7 @@ a2a:
     max_history_messages: 200    # history kept per A2A context
   push_notifications:
     enabled: false               # the server calls client-supplied webhooks when enabled
-    allowed_hosts: []            # e.g. [hooks.example.com, .internal.example.com]
+    allowed_hosts: []            # e.g. [hooks.example.com, .example.com]; empty refuses private IPs
 
 streaming:
   activity: summary              # off | summary | trace
@@ -255,6 +257,8 @@ auth:
 ```
 
 **Streaming verbosity.** `summary` shows tool names with short argument and result previews, `trace` shows them in full, and `off` sends only the answer. Tool arguments and results are always redacted: values under keys containing any `redact_keys` entry become `***`. Thinking can be hidden separately with `thinking: false`.
+
+**Push notifications.** While disabled, every push URL is refused, including configs sent inline with `SendMessage`. When enabled, only `http`/`https` URLs are accepted; with `allowed_hosts` the host must match an entry (a leading dot matches subdomains), and without it loopback, private, and link-local IP addresses and `localhost` are refused. Hostnames are not resolved, so set `allowed_hosts` to restrict destinations fully.
 
 **Authentication.** When `auth.bearer_token_secret` names a secret file, `/v1/*` and `/a2a` require `Authorization: Bearer <token>` and the agent card declares the bearer scheme. Health probes and the agent card stay public. If the secret file is missing, requests are refused (fail closed).
 
