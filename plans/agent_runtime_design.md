@@ -46,6 +46,16 @@ Two SDK issues are worked around, each guarded by a test: the handler never rele
 
 Push notifications are off (they make the server call client-supplied URLs); when on, destinations are limited to http(s) and an optional host allowlist. Optional bearer-token auth covers `/v1` and `/a2a` and fails closed if its secret is missing; the agent card declares the scheme. Client-facing error messages name the exception type only. Tool arguments and results in activity are redacted by key.
 
+## Conformance
+
+The A2A server was run against the official [A2A TCK](https://github.com/a2aproject/a2a-tck) (JSON-RPC transport, an agent answering from a fixed model):
+
+- **SHOULD:** all checks pass (after adding agent-card `Cache-Control`/`ETag`).
+- **MUST:** every protocol-level check passes. Five checks fail by design: the TCK drives a scripted executor that must return canned artifacts (text, file, file URL, and data parts with fixed contents) or a canned message text in response to `messageId` prefixes, which a model-driven agent doesn't do.
+- **Skipped:** checks for transports this server doesn't offer (gRPC, HTTP+JSON), and error checks that only apply to agents lacking a capability (streaming, push notifications).
+
+To rerun: serve an agent with `a2a.push_notifications.enabled: true`, then `./run_tck.py --sut-host http://127.0.0.1:<port> --transport jsonrpc --level must` from a checkout of the TCK.
+
 ## Known limitations
 
 - A task's live event stream lives in the replica running it (an a2a-sdk property), so multi-replica A2A needs session affinity even with SQL storage.

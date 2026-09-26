@@ -195,13 +195,13 @@ capabilities:
 | ------------------------- | ------------------------------------------------------------------------------------------ |
 | `A2AAgent`                | Delegate to a remote A2A agent (see the [orchestrator](../orchestrator_agent/README.md))    |
 | `RepairToolArguments`     | Repair malformed JSON tool arguments (common with self-hosted models) before validation     |
-| `ToolOutputLimits`        | Truncate or summarize oversized tool results at the source                                  |
+| `ToolOutputLimits`        | Truncate, spill, or summarize oversized tool results at the source (spills to `/tmp`, which must be writable) |
 | `ClampOversizedMessages`  | Clamp any single oversized message part                                                     |
 | `ClearToolResults`        | Replace old tool results with placeholders as history grows                                 |
 | `SlidingWindowCompaction` | Keep the most recent messages within a message or token budget                              |
 | `SummarizingCompaction`   | Summarize older history with a model                                                        |
 | `WarnNearLimits`          | Warn the model as it approaches iteration or token limits                                   |
-| `Planning`                | Give the model a task plan it maintains while working                                       |
+| `Planning`                | Give the model a task plan it maintains while working (in memory, per run)                  |
 | `SpendLimits`             | Enforce token or cost budgets                                                               |
 
 All but `A2AAgent` come from [Pydantic AI Harness](https://pydantic.dev/docs/ai/harness/); see its docs for their arguments.

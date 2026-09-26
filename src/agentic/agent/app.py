@@ -16,6 +16,7 @@ per-interface switches and optional bearer-token authentication.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -57,6 +58,69 @@ def bearer_token_matches(header: str | None, token: str) -> bool:
     if not header or not header.lower().startswith("bearer "):
         return False
     return hmac.compare_digest(header[7:].strip().encode(), token.encode())
+
+
+#: Agent cards change only on reload; let clients and proxies cache them briefly.
+CARD_MAX_AGE_SECONDS = 60
+
+
+class CardCaching:
+    """Pure-ASGI middleware adding HTTP caching to agent card responses.
+
+    Adds ``Cache-Control: public, max-age=60`` and a strong ``ETag`` (a hash of
+    the card JSON), and answers ``If-None-Match`` revalidations with
+    ``304 Not Modified``, as the A2A specification recommends.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] != "http"
+            or scope["method"] not in ("GET", "HEAD")
+            or scope["path"] not in CARD_PATHS
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        start: dict[str, Any] = {}
+        chunks: list[bytes] = []
+
+        async def capture(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                start.update(message)
+            elif message["type"] == "http.response.body":
+                chunks.append(message.get("body", b""))
+
+        await self.app(scope, receive, capture)
+        body = b"".join(chunks)
+        headers = [
+            (k, v)
+            for k, v in start.get("headers", [])
+            if k.lower() not in (b"cache-control", b"etag", b"content-length")
+        ]
+        status = start.get("status", 500)
+        if status == 200:
+            etag = f'"{hashlib.sha256(body).hexdigest()[:32]}"'
+            headers += [
+                (b"cache-control", f"public, max-age={CARD_MAX_AGE_SECONDS}".encode()),
+                (b"etag", etag.encode()),
+            ]
+            request_headers = dict(scope.get("headers") or [])
+            if_none_match = request_headers.get(b"if-none-match", b"").decode("latin-1")
+            if etag in {tag.strip() for tag in if_none_match.split(",")}:
+                status, body = 304, b""
+        headers.append((b"content-length", str(len(body)).encode()))
+        await send(
+            {"type": "http.response.start", "status": status, "headers": headers}
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": b"" if scope["method"] == "HEAD" else body,
+            }
+        )
 
 
 class InterfaceGate:
@@ -225,6 +289,7 @@ def create_app(
 
     app.include_router(build_openai_router(current))
     app.router.routes.extend(a2a.routes)
+    app.add_middleware(CardCaching)
     app.add_middleware(InterfaceGate, runtime=runtime)
     setup_telemetry(app, service_name=runtime.current.model_name)
     return app

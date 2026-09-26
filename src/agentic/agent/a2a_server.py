@@ -33,12 +33,13 @@ always get a task. ``response_mode: message`` / ``task`` force one shape.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ipaddress
 import logging
 import time
 import weakref
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
@@ -74,6 +75,7 @@ from a2a.types import (
 )
 from a2a.utils import TransportProtocol
 from a2a.utils.constants import PROTOCOL_VERSION_0_3, PROTOCOL_VERSION_1_0
+from a2a.utils.errors import InvalidParamsError, UnsupportedOperationError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from starlette.routing import BaseRoute
 
@@ -414,8 +416,27 @@ class AgentRequestExecutor(AgentExecutor):
 # --------------------------------------------------------------------------------------
 
 
+_TERMINAL_TASK_ERRORS = ("is already completed", "is in terminal state")
+
+
+@contextlib.contextmanager
+def _spec_errors() -> Iterator[None]:
+    """Report operations on finished tasks with the error A2A 1.0 specifies.
+
+    The spec requires ``UnsupportedOperationError`` (-32004) for messages sent
+    to, or subscriptions on, a task in a terminal state; a2a-sdk 1.1.x raises
+    ``InvalidParamsError`` (-32602).
+    """
+    try:
+        yield
+    except InvalidParamsError as exc:
+        if any(marker in (exc.message or "") for marker in _TERMINAL_TASK_ERRORS):
+            raise UnsupportedOperationError(exc.message) from exc
+        raise
+
+
 class AgentRequestHandler(DefaultRequestHandler):
-    """The a2a-sdk request handler with two fixes for long-running servers.
+    """The a2a-sdk request handler with fixes for long-running servers.
 
     - The agent card is read from the current snapshot, so reloads that change
       the card (e.g. enabling push notifications) take effect immediately.
@@ -423,6 +444,7 @@ class AgentRequestHandler(DefaultRequestHandler):
       request answered with a direct Message, which leaks memory on every quick
       reply. Those entries are released here once the Message is delivered.
       (tests/agent/test_a2a_server.py guards this workaround.)
+    - Operations on finished tasks raise the spec's UnsupportedOperationError.
     """
 
     def __init__(self, *, card: Callable[[], AgentCard], **kwargs: Any) -> None:
@@ -452,7 +474,8 @@ class AgentRequestHandler(DefaultRequestHandler):
             await registry._remove_task(task_id)
 
     async def on_message_send(self, params: Any, context: Any) -> Any:
-        result = await super().on_message_send(params, context)
+        with _spec_errors():
+            result = await super().on_message_send(params, context)
         if isinstance(result, Message):
             await self._release(params.message.task_id)
         return result
@@ -460,9 +483,10 @@ class AgentRequestHandler(DefaultRequestHandler):
     async def on_message_send_stream(self, params: Any, context: Any) -> Any:
         last = None
         try:
-            async for event in super().on_message_send_stream(params, context):
-                last = event
-                yield event
+            with _spec_errors():
+                async for event in super().on_message_send_stream(params, context):
+                    last = event
+                    yield event
         finally:
             task_id = params.message.task_id
             if isinstance(last, Message):
@@ -473,6 +497,11 @@ class AgentRequestHandler(DefaultRequestHandler):
                 task = asyncio.create_task(self._release_after_reply(task_id))
                 self._background_tasks.add(task)
                 task.add_done_callback(self._background_tasks.discard)
+
+    async def on_subscribe_to_task(self, params: Any, context: Any) -> Any:
+        with _spec_errors():
+            async for event in super().on_subscribe_to_task(params, context):
+                yield event
 
     def _message_replied(self, task_id: str) -> None:
         if (event := self._awaiting_reply.get(task_id)) is not None:

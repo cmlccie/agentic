@@ -553,3 +553,49 @@ async def test_client_leaving_before_a_quick_reply_does_not_leak(
                 break
         assert registry == {}
         assert getattr(handler, "_awaiting_reply", {}) == {}
+
+
+async def test_finished_tasks_reject_messages_with_the_spec_error(
+    tmp_path: Path,
+) -> None:
+    """A2A 1.0: messages to / subscriptions on terminal tasks are UnsupportedOperation."""
+    from a2a.types import SubscribeToTaskRequest
+    from a2a.utils.errors import UnsupportedOperationError
+
+    use_model("main", scripted_model(tool="forecast", args={"city": "a"}, answer="x"))
+    async with RunningApp(make_app(tmp_path, AGENT, server())) as running:
+        client = await a2a_client(running, streaming=False)
+        events = await send(client, "hi")
+        task = events[0].task
+        assert task.status.state == TaskState.TASK_STATE_COMPLETED
+        follow_up = SendMessageRequest(
+            message=new_text_message(
+                "more", context_id=task.context_id, task_id=task.id, role=Role.ROLE_USER
+            )
+        )
+        with pytest.raises(UnsupportedOperationError):
+            async for _ in client.send_message(follow_up):
+                pass
+        streaming = await a2a_client(running, streaming=True)
+        with pytest.raises(UnsupportedOperationError):
+            async for _ in streaming.send_message(follow_up):
+                pass
+        with pytest.raises(UnsupportedOperationError):
+            async for _ in streaming.subscribe(SubscribeToTaskRequest(id=task.id)):
+                pass
+
+
+async def test_agent_card_is_cacheable(tmp_path: Path) -> None:
+    use_model("main", scripted_model())
+    async with RunningApp(make_app(tmp_path, AGENT, server())) as running:
+        first = await running.client.get("/.well-known/agent-card.json")
+        assert first.headers["cache-control"] == "public, max-age=60"
+        etag = first.headers["etag"]
+        again = await running.client.get(
+            "/.well-known/agent-card.json", headers={"If-None-Match": etag}
+        )
+        assert again.status_code == 304 and again.content == b""
+        other = await running.client.get(
+            "/.well-known/agent-card.json", headers={"If-None-Match": '"stale"'}
+        )
+        assert other.status_code == 200 and other.json()["name"] == "Test Agent"

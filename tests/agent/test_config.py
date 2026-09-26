@@ -245,6 +245,14 @@ class TestAgentSpec:
         agent = build_agent(load_agent_spec(path, Secrets(tmp_path)), Secrets(tmp_path))
         assert agent is not None
 
+    def test_planning_is_limited_to_per_run_memory(self, tmp_path: Path) -> None:
+        path = write(
+            tmp_path / "a.yaml",
+            {"model": "test", "capabilities": [{"Planning": {"backend": "sqlite"}}]},
+        )
+        with pytest.raises(ConfigError, match="only backend: memory"):
+            build_agent(load_agent_spec(path, Secrets(tmp_path)), Secrets(tmp_path))
+
     def test_a2a_agent_is_registered(self) -> None:
         assert "A2AAgent" in {c.__name__ for c in CUSTOM_CAPABILITIES}
 

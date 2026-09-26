@@ -84,6 +84,7 @@ def chat(
     agent.to_cli_sync(prog_name=Path(sys.argv[0]).name or "agent")
 
 
+@app.command("web-chat", hidden=True)
 @app.command()
 def web(
     host: str = typer.Option("127.0.0.1", help="Address to bind."),

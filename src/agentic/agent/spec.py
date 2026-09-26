@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -36,13 +36,13 @@ from pydantic_ai.providers import Provider, infer_provider, infer_provider_class
 from pydantic_ai_harness import (
     ClampOversizedMessages,
     ClearToolResults,
-    Planning,
     SlidingWindowCompaction,
     SpendLimits,
     SummarizingCompaction,
     ToolOutputLimits,
     WarnNearLimits,
 )
+from pydantic_ai_harness import Planning as _HarnessPlanning
 from pydantic_ai_harness.repair_tool_arguments import (
     RepairToolArguments as _HarnessRepairToolArguments,
 )
@@ -62,6 +62,27 @@ class RepairToolArguments(_HarnessRepairToolArguments[Any]):
     spending a retry. Wraps the Harness capability, which isn't a dataclass and
     so can't be declared in a spec directly.
     """
+
+
+@dataclass
+class Planning(_HarnessPlanning[Any]):
+    """A task plan the model maintains during a run (in memory, per run).
+
+    Restricts the Harness capability to its ``memory`` backend: the ``sqlite``
+    backend shares one plan across every chat (a single ``session``) and writes
+    a database file into the working directory, which is read-only in the
+    hardened deployment.
+    """
+
+    @classmethod
+    def from_spec(cls, *, backend: str = "memory", **kwargs: Any) -> Planning:
+        if backend != "memory":
+            raise ValueError(
+                "Planning in agent.yaml supports only backend: memory (a fresh plan "
+                "per run); other backends would share one plan across all chats"
+            )
+        base = _HarnessPlanning.from_spec(backend="memory", **kwargs)
+        return cls(**{f.name: getattr(base, f.name) for f in fields(cls) if f.init})
 
 
 #: Harness capabilities that can be declared in `agent.yaml`. Deliberately

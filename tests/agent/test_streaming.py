@@ -163,3 +163,36 @@ async def test_heartbeat_consumer_can_stop_early() -> None:
     assert await anext(stream) is HEARTBEAT
     await stream.aclose()
     assert cancelled == [True]
+
+
+async def test_a_run_with_every_harness_capability_enabled(tmp_path: Any) -> None:
+    """The allowlisted Harness capabilities work together through a real run."""
+    from pydantic_ai import AgentSpec
+
+    from agentic.agent.config import Secrets
+    from agentic.agent.spec import build_agent
+
+    spec = AgentSpec.model_validate(
+        {
+            "model": "test",
+            "capabilities": [
+                "RepairToolArguments",
+                "ToolOutputLimits",
+                {"ClampOversizedMessages": {"max_part_chars": 20000}},
+                {"ClearToolResults": {"max_messages": 40}},
+                {"SlidingWindowCompaction": {"max_messages": 80, "keep_messages": 40}},
+                {"SummarizingCompaction": {"max_messages": 80}},
+                {"WarnNearLimits": {"max_iterations": 25}},
+                "Planning",
+                "SpendLimits",
+            ],
+        }
+    )
+    agent = build_agent(spec, Secrets(tmp_path))
+    model = scripted_model(tool="forecast", args={"city": "Oslo"}, answer="Sunny")
+    async with agent.run_stream_events(
+        "weather?", model=model, capabilities=[LocalTools()]
+    ) as events:
+        items = [i async for i in activities(events, StreamingConfig())]
+    assert isinstance(items[-1], Answer) and items[-1].text == "Sunny"
+    assert any(isinstance(i, Activity) and i.kind == "tool_result" for i in items)
