@@ -166,6 +166,7 @@ def visible(item: Activity, cfg: StreamingConfig) -> bool:
 
 
 _ICONS = {
+    "thinking": "💭",
     "note": "💬",
     "tool_call": "→",
     "tool_result": "←",
@@ -175,7 +176,7 @@ _ICONS = {
 
 
 def render(item: Activity) -> str:
-    """Render a non-thinking activity as one line of reasoning-channel text."""
+    """Render an activity as one line of human-readable text."""
     who = f"[{'/'.join(item.source)}] " if item.source else ""
     body = {
         "tool_call": f"{item.text}",

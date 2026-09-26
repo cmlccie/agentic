@@ -94,7 +94,8 @@ _API_KEY_SECRETS = ("model.api_key", "openai_compatible.api_key")
 #: Providers whose endpoint may be overridden by the model secrets above.
 _ENDPOINT_PROVIDERS = frozenset({"vllm", "openai"})
 
-_SPEC_KEYS = frozenset(AgentSpec.model_fields) | {"$schema"}
+#: Top-level keys `agent.yaml` accepts (``$schema`` is the alias of json_schema_path).
+_SPEC_KEYS = (frozenset(AgentSpec.model_fields) - {"json_schema_path"}) | {"$schema"}
 
 
 # --------------------------------------------------------------------------------------

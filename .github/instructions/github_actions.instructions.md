@@ -12,6 +12,7 @@ applyTo: ".github/workflows/*.yml"
 - `uv sync --frozen --all-groups`
 - `uv run ruff check .` and `uv run ruff format --check .`
 - `uv run pytest` (collects `tests/` and tests next to tool servers under `tools/`)
+- `uv run pytest tests/agent` again with `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python`, the protobuf runtime the Alpine images use
 - `make --always-make images/python/requirements.txt` followed by `git diff --exit-code` (requirements drift check)
 
 When changing how `requirements.txt` is exported, change the Makefile target; the CI drift check uses it.

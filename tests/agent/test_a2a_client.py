@@ -121,6 +121,21 @@ def serve_worker(tmp_path: Path, agent: dict[str, Any]) -> Server:
 # --------------------------------------------------------------------------------------
 
 
+def test_cards_with_enum_repr_bindings_are_repaired() -> None:
+    from a2a.types import AgentInterface
+
+    from agentic.agent.a2a_client import normalize_card
+
+    card = AgentCard(
+        supported_interfaces=[
+            AgentInterface(url="u", protocol_binding="TransportProtocol.JSONRPC"),
+            AgentInterface(url="u", protocol_binding="HTTP+JSON"),
+        ]
+    )
+    bindings = [i.protocol_binding for i in normalize_card(card).supported_interfaces]
+    assert bindings == ["JSONRPC", "HTTP+JSON"]
+
+
 def test_tool_names_are_safe_identifiers() -> None:
     assert tool_name_for("Weather Agent") == "weather_agent"
     assert tool_name_for("  --  ") == "agent"
@@ -368,7 +383,7 @@ def asking_app(url: str) -> Starlette:
         supported_interfaces=[
             AgentInterface(
                 url=url,
-                protocol_binding=TransportProtocol.JSONRPC,
+                protocol_binding=TransportProtocol.JSONRPC.value,
                 protocol_version=PROTOCOL_VERSION_1_0,
             )
         ],

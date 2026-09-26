@@ -44,6 +44,13 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
+      # Container images run on Alpine (musl), where protobuf uses its pure-Python
+      # runtime, which behaves differently from the C runtime used above.
+      - name: Run agent tests with the pure-Python protobuf runtime
+        run: uv run pytest tests/agent
+        env:
+          PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+
       - name: Check that images/python/requirements.txt is up to date
         run: |
           make --always-make images/python/requirements.txt

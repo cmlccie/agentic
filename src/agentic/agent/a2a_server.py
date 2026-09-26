@@ -137,6 +137,9 @@ def build_agent_card(server: ServerSpec, public_url: str, auth: bool) -> AgentCa
     """
     card = server.agent_card
     url = f"{public_url.rstrip('/')}{A2A_PATH}"
+    # Pass plain strings (not the SDK's str-enum members) to protobuf fields: the
+    # pure-Python protobuf runtime (used on Alpine/musl) stores str(member), e.g.
+    # "TransportProtocol.JSONRPC", which clients then can't match.
     kwargs: dict[str, Any] = dict(
         name=card.display_name,
         description=card.description,
@@ -173,12 +176,12 @@ def build_agent_card(server: ServerSpec, public_url: str, auth: bool) -> AgentCa
         supported_interfaces=[
             AgentInterface(
                 url=url,
-                protocol_binding=TransportProtocol.JSONRPC,
+                protocol_binding=TransportProtocol.JSONRPC.value,
                 protocol_version=PROTOCOL_VERSION_1_0,
             ),
             AgentInterface(
                 url=url,
-                protocol_binding=TransportProtocol.JSONRPC,
+                protocol_binding=TransportProtocol.JSONRPC.value,
                 protocol_version=PROTOCOL_VERSION_0_3,
             ),
         ],
@@ -220,6 +223,7 @@ class _Exchange:
         self.updater: TaskUpdater | None = None
         self.buffered: list[Activity] = []
         self.thinking: list[str] = []
+        self.thinking_source: tuple[str, ...] = ()
 
     @property
     def promoted(self) -> bool:
@@ -247,6 +251,9 @@ class _Exchange:
             self.buffered.append(item)
             return
         if item.kind == "thinking":
+            if self.thinking and item.source != self.thinking_source:
+                await self.flush_thinking()
+            self.thinking_source = item.source
             self.thinking.append(item.text)
             if sum(map(len, self.thinking)) >= _THINKING_FLUSH_CHARS:
                 await self.flush_thinking()
@@ -259,7 +266,8 @@ class _Exchange:
         if self.updater is None or not self.thinking:
             return
         text, self.thinking = "".join(self.thinking), []
-        await self._status(text, Activity("thinking", text))
+        item = Activity("thinking", text, self.thinking_source)
+        await self._status(render(item) if item.source else text, item)
 
     async def _status(self, text: str, item: Activity) -> None:
         assert self.updater is not None

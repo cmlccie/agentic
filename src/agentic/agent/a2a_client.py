@@ -114,6 +114,20 @@ def tool_description_for(card: AgentCard) -> str:
     return " ".join(parts)
 
 
+def normalize_card(card: AgentCard) -> AgentCard:
+    """Repair interface bindings published as ``TransportProtocol.JSONRPC``.
+
+    a2a-sdk servers on the pure-Python protobuf runtime (e.g. Alpine images)
+    that pass the SDK's enum members to the card publish ``str(member)`` instead
+    of ``JSONRPC``; the client then finds no compatible transport.
+    """
+    for interface in card.supported_interfaces:
+        interface.protocol_binding = interface.protocol_binding.removeprefix(
+            "TransportProtocol."
+        )
+    return card
+
+
 @dataclass
 class _Outcome:
     """What a delegation produced, accumulated from the response stream."""
@@ -180,9 +194,9 @@ class A2AAgentToolset(AbstractToolset[Any]):
                 async with httpx.AsyncClient(
                     headers=self._headers, timeout=_CARD_TIMEOUT
                 ) as http:
-                    self._card = await A2ACardResolver(
-                        http, base_url=self.url
-                    ).get_agent_card()
+                    self._card = normalize_card(
+                        await A2ACardResolver(http, base_url=self.url).get_agent_card()
+                    )
                 log.info(
                     "a2a: resolved agent card for %s (%s)", self.url, self._card.name
                 )

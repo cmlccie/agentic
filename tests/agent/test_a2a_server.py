@@ -467,3 +467,27 @@ async def test_push_url_policy(hosts: list[str], url: str, allowed: bool) -> Non
         PushNotificationsConfig(enabled=True, allowed_hosts=hosts)
     )
     assert await validate(url) is allowed
+
+
+def test_agent_card_fields_are_plain_strings_under_pure_python_protobuf() -> None:
+    """Alpine images use the pure-Python protobuf runtime, which stores str(enum)."""
+    import os
+    import subprocess
+    import sys
+
+    script = (
+        "from agentic.agent.a2a_server import build_agent_card\n"
+        "from agentic.agent.config import ServerSpec\n"
+        "spec = ServerSpec.model_validate("
+        "{'agent_card': {'display_name': 'A', 'description': 'B'}})\n"
+        "card = build_agent_card(spec, 'http://x', auth=True)\n"
+        "from google.protobuf.internal import api_implementation\n"
+        "assert api_implementation.Type() == 'python', api_implementation.Type()\n"
+        "print(sorted({i.protocol_binding for i in card.supported_interfaces}))\n"
+    )
+    env = {**os.environ, "PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION": "python"}
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=env, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "['JSONRPC']"
