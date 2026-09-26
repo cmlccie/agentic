@@ -1,36 +1,38 @@
+# agent.yaml — an orchestrator is an agent whose capabilities are other agents.
+# Reference: images/orchestrator_agent/README.md
 name: orchestrator-agent
-description: "An orchestrator that delegates tasks across specialist A2A agents"
+description: An orchestrator that delegates tasks across specialist A2A agents
 
-# Use "openai-compat" sentinel for custom OpenAI-compatible providers (e.g. LM Studio).
-# Requires secret files: openai_compatible.base_url and openai_compatible.api_key.
-# For first-class providers (Anthropic, OpenAI), use the native model string
-# and supply credentials via the provider's standard environment variable
-# (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY) -- not via a mounted secret file:
-#   model: anthropic:claude-sonnet-4-6
-#   model: openai:gpt-4o
-model: openai-compat
-model_id: local-model
+# Self-hosted OpenAI-compatible model (vLLM, SGLang, NVIDIA NIM); the endpoint comes
+# from the secret files model.base_url / model.api_key or VLLM_BASE_URL / VLLM_API_KEY.
+model: vllm:local-model
 
 instructions: |
   You are an orchestrator that coordinates a team of specialist agents.
 
   Each specialist agent is available to you as a tool. Read the user's request,
   decide which agent(s) can fulfill it, and delegate by calling the appropriate
-  tool(s) — you may call several agents to complete a single request. Provide
-  each agent a complete, self-contained instruction; they do not share this
-  conversation's context. Synthesize the agents' responses into a single,
-  coherent answer for the user. If no specialist agent fits, answer directly.
+  tool(s) — you may call several agents to complete a single request. Give each
+  agent a complete, self-contained request. Synthesize the agents' responses into
+  a single, coherent answer for the user. If an agent is unavailable or fails,
+  say so and answer as well as you can. If no specialist agent fits, answer
+  directly.
 
 model_settings:
   temperature: 0.2
   max_tokens: 4096
 
-# Downstream A2A agents to orchestrate. Each agent's card is fetched at startup
-# (and on every reload) to derive its delegation tool name and description.
-# Header values may reference secret files via ${SECRET_KEY}.
-a2a_servers: []
-# a2a_servers:
-#   - url: http://weather-agent/a2a
-#     headers:
-#       Authorization: "Bearer ${WEATHER_AGENT_TOKEN}"
-#   - url: http://network-agent/a2a
+# Downstream A2A agents: one A2AAgent capability per agent. Each agent's card is
+# fetched lazily to name and describe its delegation tool; an unreachable agent
+# simply has no tool until it comes back. ${NAME} reads a secret file or env var.
+capabilities: []
+# capabilities:
+#   - A2AAgent:
+#       url: http://weather-agent:8000/a2a
+#   - A2AAgent:
+#       url: http://network-agent:8000/a2a
+#       name: network            # tool name override (default: from the card)
+#       headers:
+#         Authorization: Bearer ${NETWORK_AGENT_TOKEN}
+#   - MCP:                       # orchestrators can use MCP tools too
+#       url: http://tools/mcp

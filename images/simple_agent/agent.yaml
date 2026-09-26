@@ -1,15 +1,18 @@
+# agent.yaml — what the agent is (a Pydantic AI agent spec).
+# Reference: images/simple_agent/README.md#agentyaml
 name: simple-agent
-description: "A general-purpose AI assistant"
+description: A general-purpose AI assistant
 
-# Use "openai-compat" sentinel for custom OpenAI-compatible providers (e.g. LM Studio).
-# Requires secret files: openai_compatible.base_url and openai_compatible.api_key.
-# For first-class providers (Anthropic, OpenAI, Gemini), use the native model string
-# and supply credentials via the provider's standard environment variable
-# (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY) -- not via a mounted secret file:
-#   model: anthropic:claude-sonnet-4-6
-#   model: openai:gpt-4o
-model: openai-compat
-model_id: local-model
+# ── Model ────────────────────────────────────────────────────────────────────────
+# Self-hosted OpenAI-compatible servers (vLLM, SGLang, NVIDIA NIM): use the vllm
+# provider. The endpoint comes from the secret files model.base_url /
+# model.api_key, or the VLLM_BASE_URL / VLLM_API_KEY environment variables.
+model: vllm:local-model
+#
+# Hosted providers read their standard environment variables:
+#   model: anthropic:claude-sonnet-5        # ANTHROPIC_API_KEY
+#   model: openai:gpt-6-sol                 # OPENAI_API_KEY (Responses API)
+#   model: openai-chat:gpt-6-sol            # OPENAI_API_KEY (Chat Completions)
 
 instructions: |
   You are a helpful general-purpose AI assistant.
@@ -22,7 +25,24 @@ model_settings:
   temperature: 0.7
   max_tokens: 4096
 
+# ── Capabilities (optional) ──────────────────────────────────────────────────────
 # capabilities:
+#   # Tools from an MCP server (connected per run; ${NAME} reads a secret file or env var)
 #   - MCP:
-#       url: http://tool-server/mcp
-#       id: my-tools
+#       url: http://weather-mcp/mcp
+#       id: weather
+#       headers:
+#         Authorization: Bearer ${WEATHER_MCP_TOKEN}
+#
+#   # Provider-adaptive reasoning (maps to reasoning_effort on vLLM reasoning models)
+#   - Thinking:
+#       effort: medium
+#
+#   # Repair almost-JSON tool arguments from self-hosted models before validation
+#   - RepairToolArguments
+#
+#   # Keep long conversations and large tool results inside the context window
+#   - ToolOutputLimits
+#   - SlidingWindowCompaction:
+#       max_messages: 80
+#       keep_messages: 40

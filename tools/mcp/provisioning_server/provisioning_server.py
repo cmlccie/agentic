@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP Weather Server."""
+"""MCP Provisioning Server."""
 
 import logging
 import os
@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 import agentic.logging
 
-agentic.logging.fancy()
 logger = logging.getLogger("provisioning_server")
 
 
@@ -69,8 +68,13 @@ def provision_server(
         ProvisionedServer: Details of the provisioned server.
     """
     logger.info(
-        f"Provisioning server '{server_name}' with {cpu_cores} CPU cores, "
-        f"{memory_gb}GB memory, and {storage_gb}GB storage on VLAN '{vlan_id}'."
+        "Provisioning server '%s' with %d CPU cores, %dGB memory, and %dGB storage "
+        "on VLAN %d.",
+        server_name,
+        cpu_cores,
+        memory_gb,
+        storage_gb,
+        vlan_id,
     )
     # Here you would add the logic to provision the server.
     # For demonstration, we'll just return a success message.
@@ -98,7 +102,7 @@ def check_vlan(vlan_id: int) -> bool:
     Returns:
         bool: True if the VLAN exists, False otherwise.
     """
-    logger.info(f"Checking existence of VLAN with ID {vlan_id}.")
+    logger.info("Checking existence of VLAN with ID %d.", vlan_id)
     # Here you would add the logic to check for VLAN existence.
     # For demonstration, we'll assume the VLAN does not exist.
 
@@ -126,7 +130,9 @@ def provision_vlan(vlan_id: int, name: str, ipv4_cidr: str) -> VLAN:
     Returns:
         VLAN: Details of the provisioned VLAN.
     """
-    logger.info(f"Provisioning VLAN {vlan_id} '{name}' with CIDR block {ipv4_cidr}.")
+    logger.info(
+        "Provisioning VLAN %d '%s' with CIDR block %s.", vlan_id, name, ipv4_cidr
+    )
     # Here you would add the logic to provision the VLAN.
     # For demonstration, we'll just return a success message.
 
@@ -142,7 +148,8 @@ def main(
     transport: Annotated[Literal["stdio", "http"], typer.Argument()] = "stdio",
 ) -> None:
     """Model Context Protocol (MCP) Provisioning Server."""
-    logger.info(f"Starting {transport} MCP Provisioning Server")
+    agentic.logging.fancy()
+    logger.info("Starting %s MCP Provisioning Server", transport)
 
     match transport:
         case "stdio":

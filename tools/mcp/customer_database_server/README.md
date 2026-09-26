@@ -6,8 +6,25 @@ customer database (customers, products, and purchases).
 ## Tools
 
 - `get_schema`: Return a DDL-like description of all tables and columns in the database.
-- `query_database`: Run a read-only `SELECT` query and return the rows. Non-`SELECT`
-  statements are rejected, and queries run inside a `READ ONLY` transaction.
+- `query_database`: Run a read-only query and return `{rows, truncated}`. Statements must
+  start with `SELECT`, `WITH`, or `EXPLAIN` (leading comments are ignored), run inside a
+  `READ ONLY` transaction with a statement timeout, and return at most `QUERY_MAX_ROWS`
+  rows.
+
+## Security
+
+The statement-prefix check and the `READ ONLY` transaction are defense in depth, not the
+access control. The real control is the database role: connect as a role that has only
+`SELECT` privileges on the tables the agent may read, for example:
+
+```sql
+CREATE ROLE customers_reader LOGIN PASSWORD '...';
+GRANT CONNECT ON DATABASE customers TO customers_reader;
+GRANT USAGE ON SCHEMA public TO customers_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO customers_reader;
+```
+
+Query results are not logged, because they may contain personal data.
 
 ## Container Image
 
@@ -46,6 +63,8 @@ The HTTP MCP endpoint is exposed at `/mcp`.
 ### Optional Environment Variables
 
 - `PGPORT`: `5432` by default. PostgreSQL port.
+- `QUERY_TIMEOUT_S`: `5` by default. Per-query statement timeout in seconds.
+- `QUERY_MAX_ROWS`: `500` by default. Maximum rows returned by `query_database`.
 - `HOST`: `0.0.0.0` by default. HTTP server bind host.
 - `PORT`: `8000` by default. HTTP server bind port.
 

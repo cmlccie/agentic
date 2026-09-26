@@ -12,6 +12,8 @@ from typing import Annotated, Literal
 import typer
 from aiops.server import mcp
 
+import agentic.logging
+
 logger = logging.getLogger("aiops_server")
 
 HOST = os.environ.get("HOST", "0.0.0.0")
@@ -22,7 +24,8 @@ def main(
     transport: Annotated[Literal["stdio", "http"], typer.Argument()] = "stdio",
 ) -> None:
     """Model Context Protocol (MCP) AIOps Server."""
-    logger.info(f"Starting {transport} MCP AIOps Server")
+    agentic.logging.fancy()
+    logger.info("Starting %s MCP AIOps Server", transport)
 
     match transport:
         case "stdio":

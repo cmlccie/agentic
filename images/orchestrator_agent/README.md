@@ -1,246 +1,92 @@
 # Orchestrator Agent
 
-A config-driven **LangGraph** supervisor that orchestrates tasks across a team of
-downstream **Agent2Agent (A2A)** agents. Like the [Simple Agent](../simple_agent/README.md),
-it is fully defined by configuration (`agent.yaml` + `server.yaml`) with no bespoke
-Python code, runs Kubernetes-native with hot-reload, and is built on the same shared
-runtime. Unlike the simple-agent (whose tools are MCP servers), the orchestrator's
-"tools" are remote A2A agents: it fetches each configured agent's card, exposes it to
-the supervisor model as a delegation tool (the LangChain `create_agent`
-subagents-as-tools pattern), and synthesizes their responses. It simultaneously exposes
-an **OpenAI-compatible REST API** under `/v1/` and a first-class **A2A server** under
-`/a2a/` supporting the full task lifecycle.
+A config-driven agent that coordinates a team of specialist agents over the Agent2Agent (A2A) protocol. It is the same runtime as the [simple agent](../simple_agent/README.md) — same OpenAI-compatible and A2A interfaces, configuration files, streaming, and hot reload — with its `agent.yaml` declaring remote agents as `A2AAgent` capabilities instead of (or alongside) MCP tool servers. Each remote agent becomes one tool the model can call; while a delegated agent works, its activity streams back to the orchestrator's caller, attributed to that agent, followed by the synthesized answer.
 
-## Interfaces and Endpoints
+This README covers what is specific to orchestration. For the interfaces, configuration reference, storage, deployment, and CLI, see the [simple agent README](../simple_agent/README.md).
 
-### `orchestrator-agent serve` endpoints
-
-| Method & Path                         | Description                                          |
-| ------------------------------------- | --------------------------------------------------- |
-| `GET /health/live`                    | Liveness probe — always 200 while the process runs  |
-| `GET /health/ready`                   | Readiness probe — 503 during drain/reload, else 200 |
-| `GET /v1/models`                      | OpenAI-compatible model list                        |
-| `POST /v1/chat/completions`           | OpenAI-compatible chat completions (stream or not)  |
-| `GET /a2a/.well-known/agent-card.json`| A2A agent card (with `/agent.json` alias)           |
-| `POST /a2a`                           | A2A JSON-RPC endpoint (`message/send`, `message/stream`, `tasks/get`, `tasks/cancel`, push-notification config) |
-
-The A2A interface supports the full task lifecycle: short message responses,
-long-running tasks with streamed status updates (SSE via `message/stream`), artifacts,
-asynchronous polling via `tasks/get`, and push notifications.
-
-## Local Testing with Docker
-
-### 1. Create a secrets directory
-
-```bash
-mkdir -p ./secrets
-
-# For an OpenAI-compatible provider (LM Studio, Ollama, vLLM, etc.)
-printf 'http://host.docker.internal:1234/v1' > ./secrets/openai_compatible.base_url
-printf 'lm-studio' > ./secrets/openai_compatible.api_key   # any non-empty placeholder
-
-# For first-class providers (Anthropic, OpenAI, etc.), set the provider's standard
-# environment variable directly on the container (e.g. ANTHROPIC_API_KEY,
-# OPENAI_API_KEY) -- these are not read from mounted secret files.
-```
-
-### 2. Start the container
-
-```bash
-docker run --rm -p 8000:8000 \
-  -v "$(pwd)/secrets:/etc/agent/secrets:ro" \
-  ghcr.io/cmlccie/agentic/orchestrator-agent:latest
-```
-
-Mount your own `agent.yaml`/`server.yaml` over `/etc/agent/config` to point the
-orchestrator at real downstream agents.
-
-### 3. Check readiness
-
-```bash
-curl -s localhost:8000/health/ready
-# {"status":"ready","in_flight":0}
-```
-
-### 4. Test the OpenAI API
-
-```bash
-curl -s localhost:8000/v1/models
-
-curl -s localhost:8000/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"orchestrator-agent","messages":[{"role":"user","content":"Plan my day."}]}'
-```
-
-### 5. Test the A2A interface
-
-Fetch the agent card and send a task with any A2A client (e.g. the `a2a-sdk`):
-
-```bash
-curl -s localhost:8000/a2a/.well-known/agent.json
-```
-
-```python
-import asyncio, httpx
-from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
-from a2a.helpers import get_artifact_text, new_text_message
-from a2a.types import Role, SendMessageRequest
-
-async def main():
-    async with httpx.AsyncClient(timeout=120) as http:
-        card = await A2ACardResolver(http, base_url="http://localhost:8000/a2a").get_agent_card()
-        client = ClientFactory(ClientConfig(httpx_client=http, streaming=True)).create(card)
-        req = SendMessageRequest(message=new_text_message("Plan my day.", role=Role.ROLE_USER))
-        async for resp in client.send_message(req):
-            if resp.HasField("artifact_update"):
-                print(get_artifact_text(resp.artifact_update.artifact))
-        await client.close()
-
-asyncio.run(main())
-```
-
-## Container Images
-
-Build locally from the repository root:
-
-```bash
-make python-base-image     # base image carries all Python dependencies
-make orchestrator-agent    # builds agentic/orchestrator-agent:local
-```
-
-Published images: `ghcr.io/cmlccie/agentic/orchestrator-agent`.
-
-## Configuration Reference
-
-### `agent.yaml` — Agent identity and downstream agents
+## How delegation works
 
 ```yaml
+# agent.yaml
 name: orchestrator-agent
-description: "An orchestrator that delegates tasks across specialist A2A agents"
-
-# ── Model ──────────────────────────────────────────────────────────────────────
-# Option A: first-class provider (set the provider's standard environment
-# variable directly on the container, e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY)
-# model: anthropic:claude-sonnet-4-6
-# model: openai:gpt-4o
-#
-# Option B: OpenAI-compatible custom endpoint (LM Studio, Ollama, vLLM, etc.)
-# Requires secret files: openai_compatible.base_url, openai_compatible.api_key
-model: openai-compat
-model_id: local-model
-
+model: vllm:Qwen/Qwen3-32B
 instructions: |
-  You are an orchestrator that coordinates a team of specialist agents...
-
-model_settings:
-  temperature: 0.2
-  max_tokens: 4096
-
-# ── Downstream A2A agents ───────────────────────────────────────────────────────
-# Each agent's card is fetched at startup/reload to derive its delegation tool's
-# name, description, and skills. Unreachable agents are skipped (degraded mode).
-# Header values may reference secret files via ${SECRET_KEY}.
-a2a_servers:
-  - url: http://weather-agent/a2a
-    headers:
-      Authorization: "Bearer ${WEATHER_AGENT_TOKEN}"
-  - url: http://network-agent/a2a
+  Coordinate the specialist agents available to you as tools...
+capabilities:
+  - A2AAgent:
+      url: http://weather-agent:8000/a2a
+  - A2AAgent:
+      url: http://network-agent:8000/a2a
+      name: network
+      headers:
+        Authorization: Bearer ${NETWORK_AGENT_TOKEN}
 ```
 
-### `server.yaml` — Serving infrastructure
+For each `A2AAgent`:
 
-```yaml
-agent_card:
-  display_name: "Orchestrator Agent"
-  description: "..."
-  version: "1.0.0"
-  provider:
-    organization: ""
-    url: ""
-  skills: []
+1. The remote agent's card is fetched from `<url>/.well-known/agent-card.json` the first time the agent runs, and cached. Its name becomes the tool name (`Weather Agent` → `weather_agent`) and its description and skills become the tool description. If the card can't be fetched, the tool is simply absent and the fetch is retried at most every 30 seconds, so an unavailable agent never stops the orchestrator from starting or answering.
+2. When the model calls the tool, the request is sent with streaming. The remote agent's thinking, tool calls, results, and its own delegations are relayed into the orchestrator's activity stream, attributed by agent name.
+3. The remote answer (a direct Message, or a Task's artifacts) is returned to the model. Failures come back to the model as text it can reason about — unreachable agent, `failed`, `rejected`, or `canceled` task, or a task that stopped early — so one flaky agent never aborts the whole run.
 
-broker:
-  backend: memory   # "memory" | "postgres"
+Follow-up calls within the same conversation reuse the remote agent's `contextId`, so the remote agent remembers earlier turns. Over A2A the conversation is the caller's `contextId`; over the OpenAI API, which is stateless, send a conversation id (`X-Conversation-Id`, Open WebUI's `X-OpenWebUI-Chat-Id`, or a `conversation_id` body field), otherwise each chat turn starts fresh remote contexts. If a remote task asks for more input (`input-required`), the model sees the question and its next call continues that same task. Cancelling the orchestrator's request (closing the stream, or `CancelTask` on the orchestrator's task) cancels the remote task too.
 
-interfaces:
-  a2a: true
-  openai_compat: true
+| `A2AAgent` argument | Default                      | Purpose                                                        |
+| ------------------- | ---------------------------- | -------------------------------------------------------------- |
+| `url`               | (required)                   | Base URL of the remote agent's A2A endpoint                    |
+| `name`              | from the card                | Tool name                                                      |
+| `description`       | from the card and its skills | Tool description                                               |
+| `headers`           | none                         | HTTP headers such as `Authorization`; `${NAME}` references work |
+| `timeout`           | 300                          | Seconds to wait between streamed events from the remote agent  |
 
-reload:
-  drain_timeout: 30  # seconds to drain in-flight requests before forcing reload
-```
+Any A2A 1.0 or 0.3 agent works as a delegate, not only agents of this runtime. Agents of this runtime add the activity extension, so their inner work shows up in the orchestrator's stream.
 
-> **`broker.backend`:**
-> - `memory` (default) — in-process A2A task store; ephemeral, single-replica.
-> - `postgres` — persistent SQL task store (a2a-sdk `DatabaseTaskStore`) suitable
->   for multi-replica deployments. Requires the `task_broker.database_url` secret
->   (`postgresql+asyncpg://user:pass@host:5432/dbname`); the `tasks` table is
->   created automatically on first use.
->
-> `redis` is not supported for the orchestrator's A2A task store (the a2a-sdk
-> store is SQL-based); it warns and falls back to in-memory — use `postgres`.
+## What callers see
 
-### Secrets reference
-
-Secrets are read from files under `/etc/agent/secrets/<key>` (Kubernetes Secret volume)
-on every access — rotated values are picked up without a restart.
-
-| Secret file                    | Used for                                                        |
-| ------------------------------- | ----------------------------------------------------------------- |
-| `openai_compatible.base_url`   | OpenAI-compatible endpoint base URL (`model: openai-compat`)    |
-| `openai_compatible.api_key`    | OpenAI-compatible endpoint API key (`model: openai-compat`)     |
-| `task_broker.database_url`     | Postgres task store DSN (`broker.backend: postgres`)            |
-| `<custom>`                     | Any token referenced as `${CUSTOM}` in an `a2a_servers` header  |
-
-First-class providers (`model: anthropic:...`, `model: openai:...`) read credentials from the
-provider's standard environment variable on the container, not from a secret file.
-
-## Kubernetes Deployment
-
-Mount `agent.yaml`/`server.yaml` from a ConfigMap at `/etc/agent/config` and secrets
-from a Secret at `/etc/agent/secrets`. **Mount whole directories — never use `subPath`**,
-which bypasses Kubernetes AtomicWriter and breaks hot-reload.
-
-```yaml
-volumeMounts:
-  - name: config
-    mountPath: /etc/agent/config
-    readOnly: true
-  - name: secrets
-    mountPath: /etc/agent/secrets
-    readOnly: true
-```
-
-Wire probes to `/health/live` (liveness) and `/health/ready` (readiness); set the
-readiness `failureThreshold` high enough to cover `reload.drain_timeout` so a reload
-drains traffic instead of restarting the pod. Pass the externally reachable URL via
-`--agent-url` so the published A2A agent card advertises the correct endpoint.
-
-## Hot-Reload
-
-Editing the mounted `agent.yaml`/`server.yaml` (or rotating a secret) triggers a
-zero-downtime reload: the readiness probe goes 503 (DRAINING → RELOADING), in-flight
-requests drain, the supervisor graph is rebuilt — re-fetching every downstream agent
-card so added/removed `a2a_servers` take effect — then readiness returns to 200.
-
-```bash
-# Trigger a reload manually (e.g. after rotating a secret) without changing files:
-kubectl exec -n agents deploy/my-orchestrator -- kill -HUP 1
-```
-
-> Interface topology (which interfaces are mounted, the published agent card) is fixed
-> at startup; toggling interfaces or changing the card requires a pod restart. The model,
-> instructions, and downstream agent set are hot-reloaded.
-
-## CLI Reference
+Over the OpenAI API, the reasoning channel shows the orchestrator's own thinking, its delegation calls, and each delegated agent's activity, then the answer:
 
 ```text
-orchestrator-agent serve [OPTIONS]
-
-  --host         Bind host (default: 0.0.0.0)
-  --port         Bind port (default: 8000)
-  --config-dir   Config directory (default: /etc/agent/config)
-  --secrets-dir  Secrets directory (default: /etc/agent/secrets)
-  --agent-url    Public URL advertised in the A2A agent card (default: http://localhost:8000)
-  --log-level    Log level (default: info)
+reasoning_content:  The user wants the weather in Paris; the weather agent can help.
+reasoning_content:  → weather_agent({"request": "What is the weather in Paris today?"})
+reasoning_content:  [weather_agent] 💭 I should call the forecast tool.
+reasoning_content:  [weather_agent] → get_forecast({"city": "Paris"})
+reasoning_content:  [weather_agent] ← get_forecast: {"temp_c": 18, "sky": "sunny"}
+reasoning_content:  ← weather_agent: It's 18°C and sunny in Paris.
+content:            It's 18°C and sunny in Paris today.
 ```
+
+Over A2A, delegation promotes the exchange to a Task, and the same activity arrives as `working` status updates marked with the `urn:agentic:a2a:activity:v1` extension; each update's `source` names the agent it came from.
+
+## Quick start
+
+```bash
+mkdir -p config secrets
+cp images/orchestrator_agent/{agent,server}.yaml config/
+# edit config/agent.yaml: set the model and add an A2AAgent per downstream agent
+printf 'http://host.docker.internal:8000/v1' > secrets/model.base_url
+
+docker run --rm -p 8080:8000 \
+  -v "$PWD/config:/etc/agent/config:ro" \
+  -v "$PWD/secrets:/etc/agent/secrets:ro" \
+  ghcr.io/cmlccie/agentic/orchestrator-agent:latest serve --public-url http://localhost:8080
+
+curl -s localhost:8080/v1/chat/completions -H 'Content-Type: application/json' \
+  -d '{"model": "orchestrator-agent", "stream": true,
+       "messages": [{"role": "user", "content": "What is the weather in Paris?"}]}'
+```
+
+Downstream agents must advertise a reachable address in their cards (their `--public-url`), because A2A clients send requests to the URL in the card.
+
+## Deploy with Terraform
+
+[`modules/terraform-kubernetes-orchestrator-agent`](../../modules/terraform-kubernetes-orchestrator-agent/README.md) renders `agent.yaml` and `server.yaml` from files into a ConfigMap, the secrets into a Secret, and a hardened Deployment and Service.
+
+## Build
+
+```bash
+make python-base-image                                       # agentic/python:local
+make orchestrator-agent BASE_IMAGE=agentic/python:local      # agentic/orchestrator-agent:local
+```
+
+## Upgrading from the LangGraph orchestrator
+
+Earlier versions ran the orchestrator on LangChain/LangGraph. Existing configurations keep working: `a2a_servers` entries become `A2AAgent` capabilities (`id` becomes `name`), `model: openai-compat` with `model_id` becomes `model: vllm:<model_id>`, and `broker.backend: postgres` becomes the `sql` store using the existing `task_broker.database_url` secret. Each translation logs a warning showing the new form.
