@@ -81,7 +81,7 @@ The reusable workflow automatically handles image tagging with:
 
 - Semantic versioning patterns for `vX.Y.Z` tag pushes (`{{version}}`, `{{major}}.{{minor}}`, `{{major}}`), giving `X.Y.Z`, `X.Y`, and `X` (only `X.Y.Z` for prereleases)
 - Branch names for development builds (`{{branch}}`)
-- Commit SHA for traceability (`{{branch}}-{{sha}}`), except on pull request builds
+- Commit SHA for traceability (`{{branch}}-{{sha}}`) on branch pushes only, since tag pushes have no branch
 - `latest` tag only for default branch builds
 - Pull request references for PR builds (computed but not pushed)
 
