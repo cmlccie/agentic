@@ -28,10 +28,12 @@ from typing import Any
 from fastapi import FastAPI
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from .a2a_client import AgentDeps
 from .a2a_server import A2A_PATH, CARD_PATHS, build_a2a_server
 from .config import CONFIG_DIR, SECRETS_DIR, Secrets
 from .openai_api import build_openai_router
 from .runtime import AgentRuntime, Snapshot, load_snapshot
+from .stores import open_storage
 from .telemetry import setup_telemetry
 
 log = logging.getLogger(__name__)
@@ -230,9 +232,12 @@ def create_app(
     def current() -> Snapshot:
         return runtime.current
 
+    # Stores outlive every reload: they are chosen from the startup server.yaml.
+    storage = open_storage(runtime.current.server.a2a.store, secrets)
+    deps = AgentDeps(delegations=storage.delegations)
     a2a = build_a2a_server(
         current,
-        secrets,
+        storage,
         public_url,
         auth=lambda: bool(runtime.current.server.auth.bearer_token_secret),
     )
@@ -261,6 +266,7 @@ def create_app(
             if watcher is not None:
                 await asyncio.gather(watcher, return_exceptions=True)
             await a2a.aclose()
+            await storage.aclose()
 
     card = runtime.current.server.agent_card
     app = FastAPI(
@@ -287,7 +293,7 @@ def create_app(
             "generation": snapshot.generation,
         }
 
-    app.include_router(build_openai_router(current))
+    app.include_router(build_openai_router(current, deps))
     app.router.routes.extend(a2a.routes)
     app.add_middleware(CardCaching)
     app.add_middleware(InterfaceGate, runtime=runtime)

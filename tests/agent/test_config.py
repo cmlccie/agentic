@@ -24,6 +24,7 @@ from agentic.agent.spec import (
     CUSTOM_CAPABILITIES,
     HARNESS_CAPABILITIES,
     build_agent,
+    capability_names,
     load_agent_spec,
     migrate_legacy_agent_config,
     resolve_model,
@@ -177,6 +178,32 @@ class TestAgentSpec:
         path = write(tmp_path / "a.yaml", {"model": "test", "instruction": "typo"})
         with pytest.raises(ConfigError, match="instruction"):
             load_agent_spec(path, Secrets(tmp_path))
+
+    @pytest.mark.parametrize(
+        "capability",
+        [
+            "WebSearch",
+            {"WebFetch": {"allowed_domains": ["example.com"]}},
+            "XSearch",
+            "ImageGeneration",
+            {"NativeTool": {"tool": "code_execution"}},
+        ],
+    )
+    def test_native_tool_capabilities_are_rejected(
+        self, tmp_path: Path, capability: Any
+    ) -> None:
+        """Tools come only from MCP servers and remote agents."""
+        path = write(
+            tmp_path / "a.yaml",
+            {"model": "test", "capabilities": ["Thinking", capability]},
+        )
+        with pytest.raises(ConfigError, match="tools must come from MCP servers"):
+            load_agent_spec(path, Secrets(tmp_path))
+
+    def test_capability_names(self) -> None:
+        entries = ["Thinking", {"MCP": {"url": "u"}}, 3, {"A2AAgent": {}}]
+        assert capability_names(entries) == ["Thinking", "MCP", "A2AAgent"]
+        assert capability_names(None) == []
 
     def test_secret_references_in_capabilities(self, tmp_path: Path) -> None:
         secrets = secrets_with(tmp_path, {"tools_token": "t0k"})

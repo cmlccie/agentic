@@ -21,6 +21,12 @@ LangChain, curl) use, so it follows the OpenAI Chat Completions contract closely
 The conversation is stateless: clients send the full history each time.
 ``reasoning_content`` (and Open WebUI's ``<think>`` blocks) in assistant
 messages is dropped so the agent's activity isn't fed back to the model.
+
+**Callers cannot change the agent's instructions.** The agent's instructions
+come only from `agent.yaml`. Caller-supplied ``system`` and ``developer``
+messages are dropped and logged as a prompt-injection attempt (a ``SECURITY:``
+warning with the full attempted text). Chat UIs that send a per-model system
+prompt (e.g. Open WebUI's "System Prompt" setting) trigger this too.
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any, TypeVar
+from typing import Any, NamedTuple, TypeVar
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -45,7 +51,6 @@ from pydantic_ai.messages import (
     ModelRequestPart,
     ModelResponse,
     ModelResponsePart,
-    SystemPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -54,6 +59,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.settings import ModelSettings
 
+from .a2a_client import AgentDeps
 from .runtime import Snapshot
 from .streaming import (
     HEARTBEAT,
@@ -224,14 +230,42 @@ def _strip_reasoning(text: str) -> str:
     return _REASONING_BLOCKS.sub("", text).strip()
 
 
-def to_pydantic_ai(
-    messages: list[dict[str, Any]],
-) -> tuple[str | list[UserContent], list[ModelMessage]]:
+class DroppedInstruction(NamedTuple):
+    """A caller-supplied instruction message that was removed from the request.
+
+    Attributes:
+        index: Position of the message in the request's ``messages`` list.
+        role: ``system`` or ``developer``.
+        content: The message content exactly as the caller sent it.
+    """
+
+    index: int
+    role: str
+    content: Any
+
+
+class ChatInput(NamedTuple):
+    """A chat request converted for Pydantic AI.
+
+    Attributes:
+        prompt: The new user prompt (the last message).
+        history: The earlier conversation as Pydantic AI messages.
+        dropped: Caller-supplied system/developer messages that were removed.
+    """
+
+    prompt: str | list[UserContent]
+    history: list[ModelMessage]
+    dropped: tuple[DroppedInstruction, ...] = ()
+
+
+def to_pydantic_ai(messages: list[dict[str, Any]]) -> ChatInput:
     """Split OpenAI chat messages into the new prompt and the prior history.
 
     The last message must come from the user; everything before it becomes
-    Pydantic AI message history (system/developer → system prompt, assistant
-    text and tool calls → model responses, tool results → tool returns).
+    Pydantic AI message history (assistant text and tool calls → model
+    responses, tool results → tool returns). ``system`` and ``developer``
+    messages are removed and returned in ``dropped``: the agent's instructions
+    come only from its configuration.
 
     Raises:
         OpenAIError: For malformed or unsupported messages.
@@ -244,14 +278,13 @@ def to_pydantic_ai(
         raise OpenAIError(f"invalid messages: {exc}", param="messages") from exc
 
 
-def _convert(
-    messages: list[dict[str, Any]],
-) -> tuple[str | list[UserContent], list[ModelMessage]]:
+def _convert(messages: list[dict[str, Any]]) -> ChatInput:
     *earlier, last = messages
     if last.get("role") != "user":
         raise OpenAIError("the last message must have role 'user'", param="messages")
 
     history: list[ModelMessage] = []
+    dropped: list[DroppedInstruction] = []
     tool_names: dict[str, str] = {}
     unanswered: set[str] = set()
 
@@ -282,7 +315,7 @@ def _convert(
         content = message.get("content")
         match role:
             case "system" | "developer":
-                add_request(SystemPromptPart(content=_text_of(content)))
+                dropped.append(DroppedInstruction(index, role, content))
             case "user":
                 require_tool_results()
                 add_request(UserPromptPart(content=_user_content(content)))
@@ -320,7 +353,34 @@ def _convert(
                 )
 
     require_tool_results()
-    return _user_content(last.get("content")), history
+    return ChatInput(_user_content(last.get("content")), history, tuple(dropped))
+
+
+def log_dropped_instructions(
+    dropped: tuple[DroppedInstruction, ...],
+    *,
+    client: str,
+    user_agent: str,
+    conversation_id: str | None,
+) -> None:
+    """Log each dropped system/developer message as a prompt-injection attempt.
+
+    One ``SECURITY:`` warning per message, with the attempted instructions in
+    full. The content is JSON-encoded so embedded newlines can't forge extra
+    log records.
+    """
+    for item in dropped:
+        log.warning(
+            "SECURITY: prompt injection attempt blocked: dropped caller-supplied "
+            "'%s' message (messages[%d]) from client=%s user_agent=%s "
+            "conversation=%s; attempted instructions: %s",
+            item.role,
+            item.index,
+            client,
+            json.dumps(user_agent),
+            json.dumps(conversation_id),
+            json.dumps(item.content, ensure_ascii=False, default=str),
+        )
 
 
 # --------------------------------------------------------------------------------------
@@ -377,27 +437,33 @@ def _chunk(
 
 
 async def _events(
-    snapshot: Snapshot, request: ChatCompletionRequest
+    snapshot: Snapshot,
+    request: ChatCompletionRequest,
+    chat_input: ChatInput,
+    deps: AgentDeps | None,
 ) -> AsyncIterator[Activity | Answer]:
-    prompt, history = to_pydantic_ai(request.messages)
     async with snapshot.agent.run_stream_events(
-        prompt,
-        message_history=history or None,
+        chat_input.prompt,
+        message_history=chat_input.history or None,
         model_settings=request.model_settings(),
         conversation_id=request.conversation_id,
+        deps=deps,
     ) as events:
         async for item in activities(events, snapshot.server.streaming):
             yield item
 
 
 async def complete(
-    snapshot: Snapshot, request: ChatCompletionRequest
+    snapshot: Snapshot,
+    request: ChatCompletionRequest,
+    chat_input: ChatInput,
+    deps: AgentDeps | None = None,
 ) -> dict[str, Any]:
     """Run the agent to completion and build a ``chat.completion`` body."""
     reasoning = _Reasoning()
     trace: list[str] = []
     answer: Answer | None = None
-    async for item in _events(snapshot, request):
+    async for item in _events(snapshot, request, chat_input, deps):
         if isinstance(item, Answer):
             answer = item
         elif visible(item, snapshot.server.streaming):
@@ -424,7 +490,10 @@ async def complete(
 
 
 async def stream(
-    snapshot: Snapshot, request: ChatCompletionRequest
+    snapshot: Snapshot,
+    request: ChatCompletionRequest,
+    chat_input: ChatInput,
+    deps: AgentDeps | None = None,
 ) -> AsyncIterator[str]:
     """Run the agent and yield the SSE body of a streamed chat completion."""
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
@@ -437,7 +506,7 @@ async def stream(
     yield _chunk(completion_id, created, model, {"role": "assistant", "content": ""})
     try:
         async for item in with_heartbeat(
-            _events(snapshot, request), cfg.heartbeat_seconds
+            _events(snapshot, request, chat_input, deps), cfg.heartbeat_seconds
         ):
             if item is HEARTBEAT:
                 yield ": keep-alive\n\n"
@@ -535,8 +604,15 @@ def conversation_id_from(request: Request) -> str | None:
     return None
 
 
-def build_openai_router(current: Callable[[], Snapshot]) -> APIRouter:
-    """Build the OpenAI-compatible routes; each request uses the current snapshot."""
+def build_openai_router(
+    current: Callable[[], Snapshot], deps: AgentDeps | None = None
+) -> APIRouter:
+    """Build the OpenAI-compatible routes; each request uses the current snapshot.
+
+    Args:
+        current: Returns the snapshot to use for a new request.
+        deps: Process-lifetime services passed to every agent run.
+    """
     router = APIRouter(tags=["OpenAI compatible"])
 
     @router.get("/v1/models")
@@ -587,20 +663,29 @@ def build_openai_router(current: Callable[[], Snapshot]) -> APIRouter:
         chat.conversation_id = chat.conversation_id or conversation_id_from(request)
 
         snapshot = current()
-        try:
-            to_pydantic_ai(chat.messages)  # validate before committing to a stream
+        try:  # converted (and validated) before committing to a stream
+            chat_input = to_pydantic_ai(chat.messages)
         except OpenAIError as exc:
             return exc.response()
+        if chat_input.dropped:
+            log_dropped_instructions(
+                chat_input.dropped,
+                client=request.client.host if request.client else "unknown",
+                user_agent=request.headers.get("user-agent", ""),
+                conversation_id=chat.conversation_id,
+            )
 
         if chat.stream:
             return StreamingResponse(
-                stream(snapshot, chat),
+                stream(snapshot, chat, chat_input, deps),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
         try:
             return JSONResponse(
-                await _unless_disconnected(request, complete(snapshot, chat))
+                await _unless_disconnected(
+                    request, complete(snapshot, chat, chat_input, deps)
+                )
             )
         except ClientDisconnected:
             return JSONResponse({}, status_code=499)

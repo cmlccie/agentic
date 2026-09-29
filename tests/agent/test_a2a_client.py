@@ -467,3 +467,60 @@ async def test_openai_api_conversations_reuse_the_worker_context(
                 "worker turn 1"
             )
             assert (await turn({})).endswith("worker turn 1")
+
+
+def _worker_turns(messages: Any, info: AgentInfo) -> str:
+    prompts = sum(
+        isinstance(p, UserPromptPart)
+        for m in messages
+        if isinstance(m, ModelRequest)
+        for p in m.parts
+    )
+    return f"worker turn {prompts}"
+
+
+async def _turn(running: RunningApp, conversation: str) -> str:
+    response = await running.client.post(
+        "/v1/chat/completions",
+        json={"model": "x", "messages": [{"role": "user", "content": "q"}]},
+        headers={"X-Conversation-Id": conversation},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["choices"][0]["message"]["content"]
+
+
+async def test_delegation_context_survives_a_reload(tmp_path: Path) -> None:
+    """A config reload builds a new agent (and new A2AAgent toolsets), but the
+    conversation keeps its remote context."""
+    use_model("worker", scripted_model(answer=_worker_turns))
+    use_model("orchestrator", delegating_model())
+    with serve_worker(tmp_path, {"model": "test:worker"}) as worker:
+        app = make_app(tmp_path / "o", orchestrator(f"{worker.url}/a2a"))
+        async with RunningApp(app) as running:
+            assert (await _turn(running, "chat-1")).endswith("worker turn 1")
+            before = running.app.state.runtime.current.agent
+            assert running.app.state.runtime.reload()
+            assert running.app.state.runtime.current.agent is not before
+            assert (await _turn(running, "chat-1")).endswith("worker turn 2")
+
+
+async def test_sql_delegation_state_is_shared_between_instances(
+    tmp_path: Path,
+) -> None:
+    """With the SQL store, another orchestrator instance (a replica, or this one
+    after a restart) continues the same remote context."""
+    use_model("worker", scripted_model(answer=_worker_turns))
+    use_model("orchestrator", delegating_model())
+    secrets = {"a2a.database_url": f"sqlite+aiosqlite:///{tmp_path / 'o.db'}"}
+    server = {
+        "agent_card": {"display_name": "Orchestrator", "description": "o"},
+        "a2a": {"store": {"backend": "sql"}},
+    }
+    with serve_worker(tmp_path, {"model": "test:worker"}) as worker:
+        agent = orchestrator(f"{worker.url}/a2a")
+        one = make_app(tmp_path / "one", agent, server, secrets)
+        two = make_app(tmp_path / "two", agent, server, secrets)
+        async with RunningApp(one) as first, RunningApp(two) as second:
+            assert (await _turn(first, "chat-1")).endswith("worker turn 1")
+            assert (await _turn(second, "chat-1")).endswith("worker turn 2")
+            assert (await _turn(second, "chat-2")).endswith("worker turn 1")

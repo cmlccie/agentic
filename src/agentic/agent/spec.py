@@ -3,12 +3,16 @@
 `agent.yaml` is a standard Pydantic AI agent spec (see
 https://pydantic.dev/docs/ai/agent-spec/): model, instructions, model settings,
 and capabilities. On top of the built-in capabilities (``MCP``, ``Thinking``,
-``WebSearch``, ``ToolSearch``, ``PrefixTools``, ...), agents can declare:
+``ToolSearch``, ``PrefixTools``, ...), agents can declare:
 
 - ``A2AAgent`` — delegate work to a remote A2A agent (this is what makes an
   agent an orchestrator); see `agentic.agent.a2a_client`.
 - A curated set of Pydantic AI Harness capabilities that suit long-running
   server agents (see `HARNESS_CAPABILITIES`).
+
+Tools come only from MCP servers (and remote agents via ``A2AAgent``), keeping
+tool code out of the agent. The native tool capabilities in
+`NATIVE_TOOL_CAPABILITIES` (``WebSearch``, ``WebFetch``, ...) are rejected.
 
 ``${NAME}`` references anywhere in the capability arguments (e.g. MCP or A2A
 ``headers``) are expanded from secret files or environment variables.
@@ -105,6 +109,12 @@ HARNESS_CAPABILITIES: tuple[type[AbstractCapability[Any]], ...] = (
 CUSTOM_CAPABILITIES: tuple[type[AbstractCapability[Any]], ...] = (
     A2AAgent,
     *HARNESS_CAPABILITIES,
+)
+
+#: Pydantic AI capabilities that add tools implemented by the model provider or
+#: in the agent process. Rejected: tools belong in MCP servers.
+NATIVE_TOOL_CAPABILITIES = frozenset(
+    {"WebSearch", "WebFetch", "XSearch", "ImageGeneration", "NativeTool"}
 )
 
 #: Secret files holding the endpoint for OpenAI-compatible model servers.
@@ -215,6 +225,26 @@ def resolve_model(model: str | None, secrets: Secrets) -> Model | str | None:
 # --------------------------------------------------------------------------------------
 
 
+def capability_names(entries: Any) -> list[str]:
+    """Names of the capabilities in a spec's ``capabilities`` list.
+
+    Each entry is a name (``Thinking``) or a single-key mapping of name to
+    arguments (``{MCP: {url: ...}}``); anything else is left for spec
+    validation to report.
+    """
+
+    def names_of(entry: Any) -> list[str]:
+        if isinstance(entry, str):
+            return [entry]
+        if isinstance(entry, dict):
+            return [name for name in entry if isinstance(name, str)]
+        return []
+
+    if not isinstance(entries, list):
+        return []
+    return [name for entry in entries for name in names_of(entry)]
+
+
 def load_agent_spec(path: Path, secrets: Secrets) -> AgentSpec:
     """Read, migrate, secret-expand, and validate `agent.yaml` into an AgentSpec."""
     raw = migrate_legacy_agent_config(read_yaml(path))
@@ -223,6 +253,13 @@ def load_agent_spec(path: Path, secrets: Secrets) -> AgentSpec:
         raise ConfigError(
             f"{path}: unknown key(s) {unknown}; valid keys are "
             f"{sorted(_SPEC_KEYS - {'$schema'})}"
+        )
+    if native := sorted(
+        set(capability_names(raw.get("capabilities"))) & NATIVE_TOOL_CAPABILITIES
+    ):
+        raise ConfigError(
+            f"{path}: capabilities {native} are not supported: tools must come from "
+            "MCP servers (declare them with 'MCP') or remote agents ('A2AAgent')"
         )
     if "capabilities" in raw:
         raw["capabilities"] = expand_secret_refs_deep(raw["capabilities"], secrets)

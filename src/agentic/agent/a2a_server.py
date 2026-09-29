@@ -50,14 +50,7 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
-from a2a.server.tasks import (
-    BasePushNotificationSender,
-    DatabasePushNotificationConfigStore,
-    DatabaseTaskStore,
-    InMemoryPushNotificationConfigStore,
-    TaskStore,
-    TaskUpdater,
-)
+from a2a.server.tasks import BasePushNotificationSender, TaskUpdater
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
@@ -76,25 +69,13 @@ from a2a.types import (
 from a2a.utils import TransportProtocol
 from a2a.utils.constants import PROTOCOL_VERSION_0_3, PROTOCOL_VERSION_1_0
 from a2a.utils.errors import InvalidParamsError, UnsupportedOperationError
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from starlette.routing import BaseRoute
 
+from .a2a_client import AgentDeps
 from .a2a_wire import activity_metadata, parts_text
-from .config import (
-    ConfigError,
-    PushNotificationsConfig,
-    ResponseMode,
-    Secrets,
-    ServerSpec,
-    StoreBackend,
-)
+from .config import PushNotificationsConfig, ResponseMode, ServerSpec
 from .runtime import Snapshot
-from .stores import (
-    BoundedMemoryTaskStore,
-    HistoryStore,
-    MemoryHistoryStore,
-    SqlHistoryStore,
-)
+from .stores import HistoryStore, Storage
 from .streaming import (
     ACTIVITY_EXTENSION,
     HEARTBEAT,
@@ -232,6 +213,7 @@ class _Exchange:
         self.thinking: list[str] = []
         self.thinking_source: tuple[str, ...] = ()
         self.last_flush = 0.0
+        self.last_sent = time.monotonic()
 
     @property
     def promoted(self) -> bool:
@@ -247,6 +229,7 @@ class _Exchange:
             await self.queue.enqueue_event(task)
         self.updater = TaskUpdater(self.queue, task.id, task.context_id)
         await self.updater.start_work()
+        self.last_sent = time.monotonic()
         buffered, self.buffered = self.buffered, []
         for item in buffered:
             await self.activity(item)
@@ -286,6 +269,19 @@ class _Exchange:
         item = Activity("thinking", text, self.thinking_source)
         await self._status(render(item) if item.source else text, item)
 
+    async def keepalive(self, interval: float) -> None:
+        """Send a bare ``working`` status update after ``interval`` s of silence.
+
+        Long tool calls can leave a task stream idle for minutes; clients'
+        read timeouts and proxies would close it. The update carries no
+        message, so it adds nothing to the task history or the caller's view.
+        A reply that is still a Message has nothing on the wire to keep alive.
+        """
+        if self.updater is None or time.monotonic() - self.last_sent < interval:
+            return
+        await self.updater.update_status(TaskState.TASK_STATE_WORKING)
+        self.last_sent = time.monotonic()
+
     async def _status(self, text: str, item: Activity) -> None:
         assert self.updater is not None
         await self.updater.update_status(
@@ -294,6 +290,7 @@ class _Exchange:
                 [new_text_part(text)], metadata=activity_metadata(item)
             ),
         )
+        self.last_sent = time.monotonic()
 
     async def finish(self, answer: Answer) -> None:
         """Deliver the answer: an artifact + completed, or a direct Message."""
@@ -325,16 +322,25 @@ class _Exchange:
 class AgentRequestExecutor(AgentExecutor):
     """Runs the current agent for each A2A request (see module docstring)."""
 
-    def __init__(self, current: Callable[[], Snapshot], history: HistoryStore) -> None:
+    def __init__(
+        self,
+        current: Callable[[], Snapshot],
+        history: HistoryStore,
+        deps: AgentDeps | None = None,
+    ) -> None:
         self._current = current
         self._history = history
+        self._deps = deps
         #: Called with the request's task id after a direct Message reply.
         self.on_message_reply: Callable[[str], None] = lambda task_id: None
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
 
-    def _lock(self, context_id: str) -> asyncio.Lock:
+    def _lock(self, context_id: str) -> contextlib.AbstractAsyncContextManager[Any]:
+        """Serialize runs within one context (none for a context-less request)."""
+        if not context_id:
+            return contextlib.nullcontext()
         lock = self._locks.get(context_id)
         if lock is None:
             lock = asyncio.Lock()
@@ -359,15 +365,26 @@ class AgentRequestExecutor(AgentExecutor):
             await exchange.promote()
         may_promote = a2a.response_mode == ResponseMode.AUTO
 
+        if not context_id:  # the a2a-sdk assigns one to every request
+            log.warning(
+                "a2a: request without a context id; answering it without "
+                "conversation history"
+            )
+
         async with self._lock(context_id):
-            history = await self._history.load(context_id)
+            history = await self._history.load(context_id) if context_id else []
             started = time.monotonic()
             answer: Answer | None = None
             try:
                 async with snapshot.agent.run_stream_events(
-                    prompt, message_history=history or None, conversation_id=context_id
+                    prompt,
+                    message_history=history or None,
+                    conversation_id=context_id or None,
+                    deps=self._deps,
                 ) as events:
-                    tick = _TICK_SECONDS
+                    tick = min(
+                        _TICK_SECONDS, snapshot.server.streaming.heartbeat_seconds
+                    )
                     if may_promote and not exchange.promoted:
                         tick = min(tick, max(a2a.promote_after_seconds, 0.05))
                     stream = with_heartbeat(
@@ -386,6 +403,9 @@ class AgentRequestExecutor(AgentExecutor):
                                 await exchange.promote()
                         if item is HEARTBEAT:
                             await exchange.flush_thinking(min_interval=_TICK_SECONDS)
+                            await exchange.keepalive(
+                                snapshot.server.streaming.heartbeat_seconds
+                            )
                         else:
                             await exchange.activity(item)
             except Exception as exc:
@@ -398,7 +418,8 @@ class AgentRequestExecutor(AgentExecutor):
             if answer is None:  # defensive: a run always ends with a result
                 await exchange.fail("The agent finished without producing an answer.")
                 return
-            await self._history.save(context_id, answer.messages)
+            if context_id:
+                await self._history.save(context_id, answer.messages)
         await exchange.finish(answer)
         if not exchange.promoted and context.task_id:
             self.on_message_reply(context.task_id)
@@ -577,54 +598,33 @@ def push_url_validator(config: PushNotificationsConfig) -> Callable[[str], Any]:
 
 @dataclass
 class A2AServer:
-    """The A2A routes plus resources to close on shutdown."""
+    """The A2A routes plus resources to close on shutdown (storage is closed by
+    its owner, the app)."""
 
     routes: list[BaseRoute]
     handler: AgentRequestHandler
-    engine: AsyncEngine | None
     push_client: httpx.AsyncClient
 
     async def aclose(self) -> None:
         await self.handler.aclose()
         await self.push_client.aclose()
-        if self.engine is not None:
-            await self.engine.dispose()
 
 
 def build_a2a_server(
     current: Callable[[], Snapshot],
-    secrets: Secrets,
+    storage: Storage,
     public_url: str,
     auth: Callable[[], bool],
 ) -> A2AServer:
-    """Create the process-lifetime A2A handler, stores, and routes.
+    """Create the process-lifetime A2A handler and routes.
 
-    Storage is chosen from the ``server.yaml`` loaded at startup; changing
-    ``a2a.store`` requires a restart (everything else reloads live).
+    Args:
+        current: Returns the snapshot to use for a new request.
+        storage: The stores (see `agentic.agent.stores.open_storage`); chosen
+            at startup, so changing ``a2a.store`` requires a restart.
+        public_url: The externally reachable base URL, advertised in the card.
+        auth: Whether bearer-token authentication is currently enforced.
     """
-    store = current().server.a2a.store
-    engine: AsyncEngine | None = None
-    task_store: TaskStore
-    history: HistoryStore
-    if store.backend == StoreBackend.SQL:
-        dsn = secrets.get(store.database_url_secret)
-        if not dsn:
-            raise ConfigError(
-                f"a2a.store.backend: sql needs the database URL in the secret file "
-                f"'{secrets.directory / store.database_url_secret}' (e.g. "
-                "postgresql+asyncpg://user:pass@host:5432/db or "
-                "sqlite+aiosqlite:////data/agent.db)"
-            )
-        engine = create_async_engine(dsn)
-        task_store = DatabaseTaskStore(engine, create_table=True)
-        history = SqlHistoryStore(engine, store.max_history_messages)
-        push_store: Any = DatabasePushNotificationConfigStore(engine, create_table=True)
-        log.info("a2a: tasks and conversation history are stored in SQL")
-    else:
-        task_store = BoundedMemoryTaskStore(store.max_tasks)
-        history = MemoryHistoryStore(store.max_contexts, store.max_history_messages)
-        push_store = InMemoryPushNotificationConfigStore()
-        log.info("a2a: tasks and conversation history are kept in memory")
 
     def card() -> AgentCard:
         return build_agent_card(current().server, public_url, auth())
@@ -632,10 +632,12 @@ def build_a2a_server(
     push_client = httpx.AsyncClient(timeout=_PUSH_TIMEOUT)
     handler = AgentRequestHandler(
         card=card,
-        agent_executor=AgentRequestExecutor(current, history),
-        task_store=task_store,
-        push_config_store=push_store,
-        push_sender=BasePushNotificationSender(push_client, push_store),
+        agent_executor=AgentRequestExecutor(
+            current, storage.history, AgentDeps(storage.delegations)
+        ),
+        task_store=storage.tasks,
+        push_config_store=storage.push_configs,
+        push_sender=BasePushNotificationSender(push_client, storage.push_configs),
         push_url_validator=lambda url: push_url_validator(
             current().server.a2a.push_notifications
         )(url),
@@ -651,6 +653,4 @@ def build_a2a_server(
         routes.extend(
             create_agent_card_routes(card(), card_modifier=current_card, card_url=path)
         )
-    return A2AServer(
-        routes=routes, handler=handler, engine=engine, push_client=push_client
-    )
+    return A2AServer(routes=routes, handler=handler, push_client=push_client)

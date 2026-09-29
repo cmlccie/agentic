@@ -23,7 +23,11 @@ override them with ``name`` / ``description``). When the model calls the tool:
 
 Follow-ups within the same conversation reuse the remote agent's
 ``contextId``, and a remote task that asks for more input (``input-required``)
-is continued on the next call.
+is continued on the next call. That state lives in a `DelegationStore` passed
+to each run in `AgentDeps` (see `agentic.agent.stores`), not in the agent, so
+it survives configuration reloads and, with the SQL backend, is shared across
+replicas. Runs without a conversation id (and runs started without
+`AgentDeps`, e.g. from the CLI) keep it in the capability's own memory.
 """
 
 from __future__ import annotations
@@ -32,7 +36,6 @@ import asyncio
 import logging
 import re
 import time
-from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -62,6 +65,7 @@ from .a2a_wire import (
     parts_text,
     state_name,
 )
+from .stores import DelegationStore, MemoryDelegationStore, RemoteContext
 from .streaming import Activity, ActivityEvent, prefixed
 
 log = logging.getLogger(__name__)
@@ -70,6 +74,18 @@ _CARD_TIMEOUT = 10.0
 _CARD_RETRY_SECONDS = 30.0
 _CANCEL_TIMEOUT = 5.0
 _MAX_CONVERSATIONS = 1024
+
+
+@dataclass(frozen=True)
+class AgentDeps:
+    """Process-lifetime services the interfaces pass to every agent run.
+
+    Attributes:
+        delegations: Where `A2AAgent` keeps each conversation's remote context.
+    """
+
+    delegations: DelegationStore
+
 
 _ARGS_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -163,10 +179,8 @@ class A2AAgentToolset(AbstractToolset[Any]):
         self._card: AgentCard | None = None
         self._card_retry_at = 0.0
         self._card_lock = asyncio.Lock()
-        # conversation id → (remote context id, remote task id awaiting input)
-        self._conversations: OrderedDict[str, tuple[str | None, str | None]] = (
-            OrderedDict()
-        )
+        # Run-scoped state, and everything when a run has no AgentDeps.
+        self._local = MemoryDelegationStore(_MAX_CONVERSATIONS)
 
     @property
     def id(self) -> str:
@@ -252,17 +266,16 @@ class A2AAgentToolset(AbstractToolset[Any]):
         except UserError:  # no event stream for this run; activity is optional
             pass
 
-    def _conversation(self, key: str) -> tuple[str | None, str | None]:
-        if key in self._conversations:
-            self._conversations.move_to_end(key)
-            return self._conversations[key]
-        return None, None
+    def _store_for(self, ctx: RunContext[Any]) -> tuple[DelegationStore, str]:
+        """The store and key for this run's delegation state.
 
-    def _remember(self, key: str, context_id: str | None, task_id: str | None) -> None:
-        self._conversations[key] = (context_id, task_id)
-        self._conversations.move_to_end(key)
-        while len(self._conversations) > _MAX_CONVERSATIONS:
-            self._conversations.popitem(last=False)
+        Conversation-scoped state goes to the shared store from `AgentDeps` so
+        it outlives this agent; run-scoped state (no conversation id) never
+        recurs across requests, so it stays in local memory.
+        """
+        if ctx.conversation_id and isinstance(ctx.deps, AgentDeps):
+            return ctx.deps.delegations, ctx.conversation_id
+        return self._local, ctx.conversation_id or ctx.run_id or ""
 
     async def delegate(self, name: str, request: str, ctx: RunContext[Any]) -> str:
         """Send ``request`` to the remote agent and return its answer as text."""
@@ -270,11 +283,14 @@ class A2AAgentToolset(AbstractToolset[Any]):
         if card is None:
             return f"The '{name}' agent is currently unavailable."
 
-        conversation = ctx.conversation_id or ctx.run_id or ""
-        context_id, pending_task_id = self._conversation(conversation)
-        outcome = _Outcome(context_id=context_id)
+        store, conversation = self._store_for(ctx)
+        remote = await store.load(self.url, conversation)
+        outcome = _Outcome(context_id=remote.context_id)
         message = new_text_message(
-            request, context_id=context_id, task_id=pending_task_id, role=Role.ROLE_USER
+            request,
+            context_id=remote.context_id,
+            task_id=remote.task_id,
+            role=Role.ROLE_USER,
         )
 
         async with httpx.AsyncClient(
@@ -299,8 +315,10 @@ class A2AAgentToolset(AbstractToolset[Any]):
                 await client.close()
 
         waiting = outcome.state in INTERRUPTED_STATES
-        self._remember(
-            conversation, outcome.context_id, outcome.task_id if waiting else None
+        await store.save(
+            self.url,
+            conversation,
+            RemoteContext(outcome.context_id, outcome.task_id if waiting else None),
         )
         return self._result_text(name, outcome)
 

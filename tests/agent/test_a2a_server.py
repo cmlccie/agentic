@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -25,9 +26,15 @@ from google.protobuf.json_format import MessageToDict
 from pydantic_ai.messages import ModelRequest, TextPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from agentic.agent.a2a_server import push_url_validator
-from agentic.agent.config import PushNotificationsConfig
-from agentic.agent.stores import BoundedMemoryTaskStore, trim_history
+from agentic.agent.a2a_server import AgentRequestExecutor, push_url_validator
+from agentic.agent.config import PushNotificationsConfig, Secrets, StoreConfig
+from agentic.agent.stores import (
+    BoundedMemoryTaskStore,
+    MemoryDelegationStore,
+    RemoteContext,
+    open_storage,
+    trim_history,
+)
 from agentic.agent.streaming import ACTIVITY_EXTENSION
 
 from .conftest import SLOW_STATE, RunningApp, make_app, scripted_model, use_model
@@ -599,3 +606,108 @@ async def test_agent_card_is_cacheable(tmp_path: Path) -> None:
             "/.well-known/agent-card.json", headers={"If-None-Match": '"stale"'}
         )
         assert other.status_code == 200 and other.json()["name"] == "Test Agent"
+
+
+async def test_silent_tool_calls_send_keepalive_status_updates(
+    tmp_path: Path,
+) -> None:
+    """A long, silent tool call still produces bare WORKING updates, so client
+    read timeouts and proxies don't close the stream."""
+    use_model("main", scripted_model(tool="slow", args={"seconds": 1.2}))
+    config = {**server(), "streaming": {"heartbeat_seconds": 0.3}}
+    async with RunningApp(make_app(tmp_path, AGENT, config)) as running:
+        events = await send(await a2a_client(running), "wait")
+
+    bare = [
+        e
+        for e in events
+        if e.WhichOneof("payload") == "status_update"
+        and e.status_update.status.state == TaskState.TASK_STATE_WORKING
+        and not e.status_update.status.HasField("message")
+    ]
+    # One from start_work, then keepalives while the 1.2 s tool runs.
+    assert len(bare) >= 3
+    assert states(events)[-1] == "COMPLETED"
+    assert activity_kinds(events) == ["tool_call", "tool_result"]
+
+
+async def test_no_keepalives_while_activity_flows(tmp_path: Path) -> None:
+    use_model("main", scripted_model(tool="forecast", args={"city": "Oslo"}))
+    async with RunningApp(make_app(tmp_path, AGENT, server())) as running:
+        events = await send(await a2a_client(running), "weather?")
+    bare = [
+        e
+        for e in events
+        if e.WhichOneof("payload") == "status_update"
+        and not e.status_update.status.HasField("message")
+        and e.status_update.status.state == TaskState.TASK_STATE_WORKING
+    ]
+    assert len(bare) == 1  # start_work only
+
+
+async def test_requests_without_a_context_id_get_no_shared_history(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Defensive: the a2a-sdk always assigns a context id, but if one were
+    missing the request must not read or write a shared history entry."""
+
+    class NoHistory:
+        async def load(self, context_id: str) -> list[Any]:
+            raise AssertionError("history must not be loaded")
+
+        async def save(self, context_id: str, messages: Any) -> None:
+            raise AssertionError("history must not be saved")
+
+    class Queue:
+        def __init__(self) -> None:
+            self.events: list[Any] = []
+
+        async def enqueue_event(self, event: Any) -> None:
+            self.events.append(event)
+
+    use_model("main", scripted_model(answer="hello"))
+    snapshot = make_app(tmp_path, AGENT, server()).state.runtime.current
+    context = SimpleNamespace(
+        context_id="",
+        task_id="t1",
+        message=new_text_message("hi", role=Role.ROLE_USER),
+        configuration=None,
+        current_task=None,
+    )
+    queue = Queue()
+    executor = AgentRequestExecutor(lambda: snapshot, NoHistory())
+    await executor.execute(context, queue)  # type: ignore[arg-type]
+
+    assert [type(e).__name__ for e in queue.events] == ["Message"]
+    assert queue.events[0].parts[0].text == "hello"
+    assert "without a context id" in caplog.text
+
+
+@pytest.mark.parametrize("backend", ["memory", "sql"])
+async def test_delegation_stores_round_trip(tmp_path: Path, backend: str) -> None:
+    config = StoreConfig(backend=backend)
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "a2a.database_url").write_text(
+        f"sqlite+aiosqlite:///{tmp_path / 'agent.db'}"
+    )
+    storage = open_storage(config, Secrets(secrets_dir))
+    store = storage.delegations
+    try:
+        assert await store.load("http://w/a2a", "chat") == RemoteContext()
+        await store.save("http://w/a2a", "chat", RemoteContext("ctx-1", "task-1"))
+        await store.save("http://x/a2a", "chat", RemoteContext("ctx-x"))
+        await store.save("http://w/a2a", "chat", RemoteContext("ctx-1", None))
+        assert await store.load("http://w/a2a", "chat") == RemoteContext("ctx-1")
+        assert await store.load("http://x/a2a", "chat") == RemoteContext("ctx-x")
+        assert await store.load("http://w/a2a", "other") == RemoteContext()
+    finally:
+        await storage.aclose()
+
+
+async def test_memory_delegation_store_is_bounded() -> None:
+    store = MemoryDelegationStore(max_entries=2)
+    for n in range(3):
+        await store.save("u", f"c{n}", RemoteContext(f"ctx{n}"))
+    assert await store.load("u", "c0") == RemoteContext()
+    assert await store.load("u", "c2") == RemoteContext("ctx2")

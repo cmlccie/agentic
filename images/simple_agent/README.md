@@ -70,7 +70,7 @@ The API follows the OpenAI Chat Completions contract, so Open WebUI, LibreChat, 
 
 1. A role chunk
 2. `delta.reasoning_content` chunks while the agent works
-3. The answer in `delta.content`
+3. The answer in `delta.content`, sent in one chunk when the run finishes
 4. A chunk with `finish_reason: "stop"`
 5. A usage chunk, when requested with `stream_options.include_usage`
 6. `data: [DONE]`
@@ -87,6 +87,13 @@ data: [DONE]
 ```
 
 `reasoning_content` is the field Open WebUI (collapsible "Thinking" panel), LibreChat, and vLLM-style clients read. Reasoning that clients send back in assistant messages (including Open WebUI's `<think>` blocks) is stripped so activity isn't fed back to the model.
+
+The answer isn't streamed token by token. Until a model response ends, there is no reliable way to tell a final answer from a preamble the model writes before calling a tool ("Let me check the forecast"). Pydantic AI marks the first text part of every response as a possible final result, even when a tool call follows. So text is held back per response: a preamble becomes a `💬` note in `reasoning_content`, and the answer is sent once the run completes. Activity streams live throughout.
+
+**Callers cannot change the agent's instructions.** The agent's instructions come only from `agent.yaml`. `system` and `developer` messages in a request are dropped before the model sees them. Each one is logged as a prompt-injection attempt: a `WARNING` that starts with `SECURITY:` and records the client address, `User-Agent`, conversation id, message position, and the full attempted instructions. The instructions are JSON-encoded so they stay on one log line. The request itself is still answered.
+
+> [!NOTE]
+> Open WebUI sends its per-model or per-chat "System Prompt" setting as a `system` message, so that setting triggers the warning and has no effect. Put instructions in `agent.yaml`.
 
 **Errors** use the OpenAI error shape (`{"error": {"message", "type", "code"}}`). A failure after streaming has started is sent as an `error` event, which the `openai` SDK raises as `APIError`, so a failed run never looks like an empty answer. Agent failures carry `x-should-retry: false` so SDK retries don't re-run tools with side effects. Error messages name the exception type; details are only logged.
 
@@ -127,10 +134,11 @@ A2A lets an agent answer with a direct **Message** (a quick reply, nothing to tr
 - As soon as the agent calls a tool, or the run takes longer than `promote_after_seconds`, the exchange becomes a Task.
 - A Task goes `submitted` → `working` (status updates carrying the agent's activity) → the answer as a `response` artifact → `completed`.
 - A failed run becomes a `failed` task, and `CancelTask` stops the run and any tool call or delegated task in progress.
+- While a Task is quiet, for example during a long tool call, a bare `working` status update (no message) is sent every `streaming.heartbeat_seconds`. This keeps client read timeouts and proxies from closing the stream. It adds nothing to the task's history.
 
-Requests that set `returnImmediately`, or continue an existing task, always get a Task. `response_mode: message` and `response_mode: task` force one shape.
+Requests that set `returnImmediately`, or continue an existing task, always get a Task. `response_mode: message` and `response_mode: task` force one shape. With `response_mode: message`, nothing is sent until the reply, so there is nothing to keep alive: avoid it for agents with slow tools.
 
-Follow-up messages with the same `contextId` continue the conversation: the agent keeps the message history for each context, whether the earlier turns were Messages or Tasks.
+Follow-up messages with the same `contextId` continue the conversation: the agent keeps the message history for each context, whether the earlier turns were Messages or Tasks. A message without a `contextId` gets a new, unique one (a UUID, returned in the Message or Task), so it starts a fresh history. A caller that sends an existing `contextId` continues that conversation, so separating callers from each other relies on authentication, not on context ids.
 
 ### Activity extension
 
@@ -144,8 +152,16 @@ Working status updates are marked with the agent card extension `urn:agentic:a2a
 
 ### Storage
 
-- **`memory`** (default) keeps tasks and conversation histories in the process, with no external dependencies. Both are bounded (`max_tasks`, `max_contexts`; oldest finished entries are evicted first) and are lost on restart.
-- **`sql`** keeps them in any SQLAlchemy async database. Put the DSN in the secret file named by `a2a.store.database_url_secret` (default `a2a.database_url`), for example `postgresql+asyncpg://user:pass@postgres:5432/agents` or `sqlite+aiosqlite:////data/agent.db` for single-node persistence. Tables are created on first use.
+`a2a.store` selects where the agent keeps its state:
+
+- A2A tasks
+- the conversation history for each A2A context
+- an orchestrator's delegation state: for each conversation and remote agent, the remote `contextId` and any remote task waiting for input
+
+Delegation state is used over the OpenAI API too, whenever a request carries a conversation id. All of it lives outside the agent, so it survives hot reloads.
+
+- **`memory`** (default) keeps everything in the process, with no external dependencies. Each store is bounded (`max_tasks`; `max_contexts` for histories and for delegation entries; the oldest finished entries are evicted first). Everything is lost on restart and isn't shared between replicas.
+- **`sql`** keeps everything in any SQLAlchemy async database, shared by every replica that uses it. Put the DSN in the secret file named by `a2a.store.database_url_secret` (default `a2a.database_url`), for example `postgresql+asyncpg://user:pass@postgres:5432/agents` or `sqlite+aiosqlite:////data/agent.db` for single-node persistence. Tables are created on first use.
 
 A task's live event stream (for `SendStreamingMessage`, `SubscribeToTask`, and `CancelTask`) lives in the replica that runs it, even with the `sql` store. Run the A2A interface as one replica, or give the Service session affinity (`sessionAffinity: ClientIP`) when scaling out. The OpenAI API is stateless and scales freely.
 
@@ -189,7 +205,9 @@ capabilities:
 
 **Models.** Use any Pydantic AI model string. For self-hosted OpenAI-compatible servers — vLLM, SGLang, and NVIDIA NIM — use `vllm:<served-model-name>`: it speaks Chat Completions, parses `reasoning_content` into thinking, and picks model-family profiles (Qwen, DeepSeek, Llama, Mistral, gpt-oss, ...). Its endpoint comes from the `model.base_url` / `model.api_key` secret files, or the `VLLM_BASE_URL` / `VLLM_API_KEY` environment variables. Hosted providers (`anthropic:`, `openai:`, `openai-chat:`, `google-gla:`) read their standard API-key environment variables.
 
-**Capabilities.** Besides the Pydantic AI built-ins (`MCP`, `Thinking`, `WebSearch`, `WebFetch`, `ToolSearch`, `PrefixTools`, `Instrumentation`, ...), `agent.yaml` can declare:
+**Tools come from MCP servers.** Tool code stays out of the agent: an agent's tools come from MCP servers (`MCP`) and remote agents (`A2AAgent`). Pydantic AI's native tool capabilities (`WebSearch`, `WebFetch`, `XSearch`, `ImageGeneration`, `NativeTool`) are rejected with a configuration error. `ToolSearch` (tool discovery across large MCP catalogs) and Harness `Planning` add agent-side helper tools. They don't reach outside the agent, and they are allowed.
+
+**Capabilities.** Besides the Pydantic AI built-ins (`MCP`, `Thinking`, `ToolSearch`, `PrefixTools`, `Instrumentation`, ...), `agent.yaml` can declare:
 
 | Capability                | Purpose                                                                                    |
 | ------------------------- | ------------------------------------------------------------------------------------------ |
@@ -281,6 +299,7 @@ The agent watches its config and secrets directories and reloads when anything c
 - Requests already in progress finish with the agent they started with, and every new request uses the new one.
 - There is nothing to drain and no downtime; readiness stays up.
 - If the new configuration is invalid, the error is logged and the previous configuration keeps serving. Fix the files and the next change reloads.
+- Conversation histories and orchestrator delegation state are kept, so chats continue across a reload.
 - Everything reloads live except `a2a.store`, which needs a restart.
 
 ```bash
