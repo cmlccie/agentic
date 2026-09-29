@@ -205,7 +205,10 @@ capabilities:
 
 **Models.** Use any Pydantic AI model string. For self-hosted OpenAI-compatible servers — vLLM, SGLang, and NVIDIA NIM — use `vllm:<served-model-name>`: it speaks Chat Completions, parses `reasoning_content` into thinking, and picks model-family profiles (Qwen, DeepSeek, Llama, Mistral, gpt-oss, ...). Its endpoint comes from the `model.base_url` / `model.api_key` secret files, or the `VLLM_BASE_URL` / `VLLM_API_KEY` environment variables. Hosted providers (`anthropic:`, `openai:`, `openai-chat:`, `google-gla:`) read their standard API-key environment variables.
 
-**Tools come from MCP servers.** Tool code stays out of the agent: an agent's tools come from MCP servers (`MCP`) and remote agents (`A2AAgent`). Pydantic AI's native tool capabilities (`WebSearch`, `WebFetch`, `XSearch`, `ImageGeneration`, `NativeTool`) are rejected with a configuration error. `ToolSearch` (tool discovery across large MCP catalogs) and Harness `Planning` add agent-side helper tools. They don't reach outside the agent, and they are allowed.
+**Tools come from MCP servers.** Tool code stays out of the agent: an agent's tools come from MCP servers (`MCP`) and remote agents (`A2AAgent`). Pydantic AI's native tool capabilities (`WebSearch`, `WebFetch`, `XSearch`, `ImageGeneration`, `NativeTool`) are rejected with a configuration error. Two capabilities that add helper tools are still allowed:
+
+- Harness `Planning` keeps a task plan in agent memory.
+- `ToolSearch` helps the model find tools in large MCP catalogs. By default it matches locally on `vllm:` models, but uses the provider's native tool search on models that have one (Anthropic, OpenAI Responses).
 
 **Capabilities.** Besides the Pydantic AI built-ins (`MCP`, `Thinking`, `ToolSearch`, `PrefixTools`, `Instrumentation`, ...), `agent.yaml` can declare:
 
