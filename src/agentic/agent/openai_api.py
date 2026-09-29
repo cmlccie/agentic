@@ -38,7 +38,7 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any, NamedTuple, TypeVar
+from typing import Any, NamedTuple
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -81,8 +81,6 @@ _REASONING_BLOCKS = re.compile(
 )
 _NO_RETRY = {"x-should-retry": "false"}
 _DISCONNECT_POLL_SECONDS = 1.0
-
-T = TypeVar("T")
 
 
 def failure_message(exc: BaseException) -> str:
@@ -206,7 +204,7 @@ def _user_content(content: Any) -> str | list[UserContent]:
             continue
         kind = p.get("type")
         if kind in ("text", "input_text"):
-            parts.append((p.get("text") or ""))
+            parts.append(p.get("text") or "")
         elif kind in ("image_url", "input_image"):
             image = p.get("image_url")
             url = image.get("url") if isinstance(image, dict) else image
@@ -564,7 +562,7 @@ class ClientDisconnected(Exception):
     """The client went away before a non-streaming response was ready."""
 
 
-async def _unless_disconnected(request: Request, work: Awaitable[T]) -> T:
+async def _unless_disconnected[T](request: Request, work: Awaitable[T]) -> T:
     """Await ``work``, cancelling it if the client disconnects meanwhile.
 
     Streaming responses are cancelled by the server on disconnect; a plain

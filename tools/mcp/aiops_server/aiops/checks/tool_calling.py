@@ -2,7 +2,6 @@
 
 import json
 import time
-from typing import List, Optional
 
 import httpx
 import jsonschema
@@ -29,7 +28,7 @@ def _run_mode(
     client: httpx.Client,
     engine: EngineAdapter,
     fixture: FixtureSpec,
-    model: Optional[str],
+    model: str | None,
     mode: str,
 ) -> ToolCallModeResult:
     expected_tool = fixture.expected.tool_name
@@ -107,11 +106,11 @@ def check_tool_calling(
     client: httpx.Client,
     engine: EngineAdapter,
     fixture: FixtureSpec,
-    model: Optional[str] = None,
+    model: str | None = None,
     tool_choice_mode: ToolChoiceMode = "both",
 ) -> ToolCallingResult:
     started = time.perf_counter()
-    checks: List[CheckItem] = []
+    checks: list[CheckItem] = []
 
     if not fixture.tools or not fixture.expected.tool_name:
         raise ValueError(

@@ -1,7 +1,6 @@
 """Basic inference check: prompt in, valid completion out."""
 
 import time
-from typing import List, Optional
 
 import httpx
 
@@ -23,10 +22,10 @@ def check_inference(
     client: httpx.Client,
     engine: EngineAdapter,
     fixture: FixtureSpec,
-    model: Optional[str] = None,
+    model: str | None = None,
 ) -> InferenceResult:
     started = time.perf_counter()
-    checks: List[CheckItem] = []
+    checks: list[CheckItem] = []
 
     def _result(**kwargs) -> InferenceResult:
         return InferenceResult(

@@ -17,7 +17,6 @@ Methodology:
 import asyncio
 import statistics
 import time
-from typing import List, Optional, Tuple
 
 import httpx
 
@@ -34,7 +33,7 @@ from aiops.models import CheckItem, TpsResult, TpsRun
 MIN_DECODE_WINDOW_S = 1e-6
 
 
-async def _resolve_model(client: httpx.AsyncClient, model: Optional[str]) -> str:
+async def _resolve_model(client: httpx.AsyncClient, model: str | None) -> str:
     if model:
         return model
     response = await client.get("/models")
@@ -47,11 +46,11 @@ async def _resolve_model(client: httpx.AsyncClient, model: Optional[str]) -> str
 
 async def _run_stream(client: httpx.AsyncClient, body: dict) -> TpsRun:
     t_send = time.perf_counter()
-    t_first: Optional[float] = None
-    t_last: Optional[float] = None
+    t_first: float | None = None
+    t_last: float | None = None
     chunk_tokens = 0
-    usage_completion: Optional[int] = None
-    finish_reason: Optional[str] = None
+    usage_completion: int | None = None
+    finish_reason: str | None = None
 
     async with client.stream("POST", "/chat/completions", json=body) as response:
         response.raise_for_status()
@@ -101,14 +100,14 @@ async def measure_tps(
     client: httpx.AsyncClient,
     engine: EngineAdapter,
     fixture: FixtureSpec,
-    model: Optional[str] = None,
+    model: str | None = None,
     max_tokens: int = 512,
     repetitions: int = 3,
     warmup: int = 1,
     concurrency: int = 1,
 ) -> TpsResult:
     started = time.perf_counter()
-    checks: List[CheckItem] = []
+    checks: list[CheckItem] = []
 
     def _result(**kwargs) -> TpsResult:
         return TpsResult(
@@ -135,8 +134,8 @@ async def measure_tps(
             },
         )
 
-        runs: List[TpsRun] = []
-        aggregate_tps: Optional[float] = None
+        runs: list[TpsRun] = []
+        aggregate_tps: float | None = None
         if concurrency <= 1:
             for _ in range(max(warmup, 0)):
                 await _run_stream(client, body)
@@ -187,7 +186,7 @@ async def measure_tps(
 
 def estimate_budget_s(
     max_tokens: int, repetitions: int, warmup: int, concurrency: int, floor_tps: float
-) -> Tuple[int, float]:
+) -> tuple[int, float]:
     """Worst-case stream count and rough runtime at a pessimistic decode rate."""
     streams = (warmup + repetitions) if concurrency <= 1 else (1 + concurrency)
     return streams, streams * (max_tokens / max(floor_tps, 1.0))

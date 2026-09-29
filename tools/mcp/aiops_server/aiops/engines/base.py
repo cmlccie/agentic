@@ -11,7 +11,7 @@ it only in the adapters that genuinely diverge.
 """
 
 import re
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 # Reasoning markup that must not appear inline in `message.content` when a
 # reasoning parser is correctly configured.
@@ -37,24 +37,24 @@ class EngineAdapter:
 
     name: str = "base"
 
-    def health_path(self) -> Optional[str]:
+    def health_path(self) -> str | None:
         """Server-root-relative health endpoint, or None if the engine has none."""
         return "/health"
 
-    def reasoning_field_candidates(self) -> List[str]:
+    def reasoning_field_candidates(self) -> list[str]:
         """Ordered message fields that may carry structured reasoning content."""
         return ["reasoning_content", "reasoning"]
 
-    def reasoning_leak_patterns(self) -> List[re.Pattern]:
+    def reasoning_leak_patterns(self) -> list[re.Pattern]:
         return _REASONING_LEAK_PATTERNS
 
-    def acceptable_tool_finish_reasons(self) -> Set[str]:
+    def acceptable_tool_finish_reasons(self) -> set[str]:
         return {"tool_calls"}
 
-    def tool_call_leak_patterns(self) -> List[re.Pattern]:
+    def tool_call_leak_patterns(self) -> list[re.Pattern]:
         return _TOOL_CALL_LEAK_PATTERNS
 
-    def normalize_usage(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def normalize_usage(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         """Extract the standard OpenAI usage object from a response payload."""
         usage = payload.get("usage")
         return usage if isinstance(usage, dict) else None

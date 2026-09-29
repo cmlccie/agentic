@@ -310,7 +310,7 @@ async def test_worker_context_is_reused_across_orchestrator_turns(
             second = await ask(context_id)
 
     def answer(events: list[Any]) -> str:
-        update = [e for e in events if e.WhichOneof("payload") == "artifact_update"][0]
+        update = next(e for e in events if e.WhichOneof("payload") == "artifact_update")
         return update.artifact_update.artifact.parts[0].text
 
     assert answer(first).endswith("result=worker turn 1")

@@ -30,7 +30,7 @@ def _require_env(name: str) -> str:
     """Return a required environment variable, failing with a clear message."""
     value = os.environ.get(name)
     if not value:
-        raise EnvironmentError(f"Environment variable {name} is not set.")
+        raise OSError(f"Environment variable {name} is not set.")
     return value
 
 

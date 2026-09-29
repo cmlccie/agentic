@@ -1,7 +1,6 @@
 """Endpoint readiness probe."""
 
 import time
-from typing import Optional
 
 import httpx
 
@@ -34,7 +33,7 @@ def get_endpoint_info(
             error=f"{type(exc).__name__}: {exc}",
         )
 
-    engine_health_ok: Optional[bool] = None
+    engine_health_ok: bool | None = None
     health_path = engine.health_path()
     if health_path:
         try:

@@ -1,6 +1,6 @@
 """Shared helpers for all checks: request assembly, model resolution, snippets."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -13,7 +13,7 @@ SNIPPET_LENGTH = 240
 VALID_STOP_FINISH_REASONS = {"stop", "length"}
 
 
-def snippet(text: Optional[str], length: int = SNIPPET_LENGTH) -> Optional[str]:
+def snippet(text: str | None, length: int = SNIPPET_LENGTH) -> str | None:
     if text is None:
         return None
     return text[:length]
@@ -22,15 +22,15 @@ def snippet(text: Optional[str], length: int = SNIPPET_LENGTH) -> Optional[str]:
 def build_chat_body(
     fixture: FixtureSpec,
     engine: EngineAdapter,
-    model: Optional[str],
-    extra_params: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    model: str | None,
+    extra_params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Assemble a chat-completions body from fixture tiers.
 
     Merge order (later wins): fixture.params -> fixture.engine_overrides[engine]
     -> extra_params (explicit per-call overrides).
     """
-    body: Dict[str, Any] = {"messages": fixture.messages}
+    body: dict[str, Any] = {"messages": fixture.messages}
     if model:
         body["model"] = model
     if fixture.tools:
@@ -41,7 +41,7 @@ def build_chat_body(
     return body
 
 
-def resolve_model(client: httpx.Client, model: Optional[str]) -> Optional[str]:
+def resolve_model(client: httpx.Client, model: str | None) -> str | None:
     """Return the model name to use; query GET /models when not supplied."""
     if model:
         return model
@@ -51,20 +51,20 @@ def resolve_model(client: httpx.Client, model: Optional[str]) -> Optional[str]:
     return data[0]["id"] if data else None
 
 
-def first_message(payload: Dict[str, Any]) -> Dict[str, Any]:
+def first_message(payload: dict[str, Any]) -> dict[str, Any]:
     choices = payload.get("choices") or []
     if not choices:
         return {}
     return choices[0].get("message") or {}
 
 
-def first_finish_reason(payload: Dict[str, Any]) -> Optional[str]:
+def first_finish_reason(payload: dict[str, Any]) -> str | None:
     choices = payload.get("choices") or []
     if not choices:
         return None
     return choices[0].get("finish_reason")
 
 
-def add_check(checks: List[CheckItem], name: str, passed: bool, detail: str) -> bool:
+def add_check(checks: list[CheckItem], name: str, passed: bool, detail: str) -> bool:
     checks.append(CheckItem(name=name, passed=passed, detail=detail))
     return passed
