@@ -84,15 +84,14 @@ def delegating_model(
         tools = [t.name for t in info.function_tools]
         new_turn = isinstance(messages[-1].parts[-1], UserPromptPart)
         if tools and (new_turn or len(returns) % calls) and len(returns) < calls * 10:
-            if new_turn or len(returns) % calls:
-                yield {
-                    0: DeltaToolCall(
-                        name=tools[0],
-                        json_args=json.dumps({"request": request}),
-                        tool_call_id=f"o{len(returns)}",
-                    )
-                }
-                return
+            yield {
+                0: DeltaToolCall(
+                    name=tools[0],
+                    json_args=json.dumps({"request": request}),
+                    tool_call_id=f"o{len(returns)}",
+                )
+            }
+            return
         yield f"tools={tools} result={returns[-1].content if returns else None}"
 
     return FunctionModel(stream_function=stream)
@@ -310,7 +309,7 @@ async def test_worker_context_is_reused_across_orchestrator_turns(
             second = await ask(context_id)
 
     def answer(events: list[Any]) -> str:
-        update = [e for e in events if e.WhichOneof("payload") == "artifact_update"][0]
+        update = next(e for e in events if e.WhichOneof("payload") == "artifact_update")
         return update.artifact_update.artifact.parts[0].text
 
     assert answer(first).endswith("result=worker turn 1")
@@ -325,8 +324,9 @@ async def test_cancelling_the_orchestrator_cancels_the_worker(tmp_path: Path) ->
     ) as worker:
         app = make_app(tmp_path / "o", orchestrator(f"{worker.url}/a2a"))
         with Server(app, free_port()) as orch:
-            async with httpx.AsyncClient(base_url=orch.url, timeout=10) as client:
-                async with client.stream(
+            async with (
+                httpx.AsyncClient(base_url=orch.url, timeout=10) as client,
+                client.stream(
                     "POST",
                     "/v1/chat/completions",
                     json={
@@ -334,10 +334,11 @@ async def test_cancelling_the_orchestrator_cancels_the_worker(tmp_path: Path) ->
                         "stream": True,
                         "messages": [{"role": "user", "content": "go"}],
                     },
-                ) as response:
-                    async for line in response.aiter_lines():
-                        if "→ slow" in line:
-                            break
+                ) as response,
+            ):
+                async for line in response.aiter_lines():
+                    if "→ slow" in line:
+                        break
             for _ in range(200):
                 if SLOW_STATE["cancelled"]:
                     break

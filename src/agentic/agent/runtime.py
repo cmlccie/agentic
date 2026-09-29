@@ -100,7 +100,7 @@ class AgentRuntime:
         old = self._current
         try:
             new = load_snapshot(self.config_dir, self.secrets, old.generation + 1)
-        except Exception as exc:  # any failure keeps the last good configuration
+        except Exception as exc:  # noqa: BLE001 - any failure keeps the last good config
             log.error(
                 "reload failed; still serving configuration generation %d: %s",
                 old.generation,
@@ -160,7 +160,7 @@ class AgentRuntime:
                 async for _ in awatch(directory, stop_event=stop, recursive=True):
                     log.info("watcher: change detected in %s", directory)
                     self.request_reload()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - the watcher must never die
                 log.warning(
                     "watcher: error watching %s (%s); restarting in %.0fs",
                     directory,

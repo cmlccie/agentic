@@ -20,7 +20,7 @@ import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import httpx
 import pytest
@@ -228,7 +228,7 @@ class RunningApp:
             transport=httpx.ASGITransport(app=app), base_url="http://test", timeout=30
         )
 
-    async def __aenter__(self) -> RunningApp:
+    async def __aenter__(self) -> Self:
         self._lifespan = self.app.router.lifespan_context(self.app)
         await self._lifespan.__aenter__()
         return self
@@ -260,7 +260,7 @@ class Server:
         )
         self._thread = threading.Thread(target=self._server.run, daemon=True)
 
-    def __enter__(self) -> Server:
+    def __enter__(self) -> Self:
         self._thread.start()
         deadline = time.monotonic() + 10
         while not self._server.started:

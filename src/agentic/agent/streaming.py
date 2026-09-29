@@ -27,7 +27,7 @@ import json
 import re
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 from pydantic_ai import (
     AgentRunResultEvent,
@@ -258,8 +258,6 @@ def prefixed(item: Activity, name: str) -> Activity:
 # Heartbeats
 # --------------------------------------------------------------------------------------
 
-T = TypeVar("T")
-
 
 class Heartbeat:
     """Sentinel yielded by `with_heartbeat` when the source has been quiet."""
@@ -273,7 +271,7 @@ class Heartbeat:
 HEARTBEAT = Heartbeat()
 
 
-async def with_heartbeat(
+async def with_heartbeat[T](
     source: AsyncIterator[T], interval: float
 ) -> AsyncIterator[T | Heartbeat]:
     """Yield items from ``source``, plus `HEARTBEAT` after each ``interval`` of silence.

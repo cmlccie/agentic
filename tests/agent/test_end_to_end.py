@@ -237,7 +237,7 @@ async def test_orchestrator_worker_mcp_over_http(tmp_path: Path) -> None:
 
     kinds = [e.WhichOneof("payload") for e in events]
     assert kinds[0] == "task"
-    artifact = [e for e in events if e.WhichOneof("payload") == "artifact_update"][0]
+    artifact = next(e for e in events if e.WhichOneof("payload") == "artifact_update")
     assert artifact.artifact_update.artifact.parts[0].text.startswith(
         "orchestrator-model says:"
     )

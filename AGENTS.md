@@ -85,7 +85,7 @@ Each tool server uses `fastmcp.FastMCP` via `from fastmcp import FastMCP` and ex
 ## Coding Conventions
 
 - **Python 3.13+**, type hints with Pydantic models.
-- **Ruff** for linting and formatting: 88 char line length, extended rules B/I/Q.
+- **Ruff** for linting and formatting: 88 char line length, ruff's default rule set plus the full B/I/Q families; suppress a rule only with a targeted `# noqa: <code> - <reason>`.
 - **uv** for all dependency management; `uv.lock` is committed.
 - **Hatchling** build backend; wheel packages `src/agentic`.
 - Scripts must have `#!/usr/bin/env python3` shebang and be executable.

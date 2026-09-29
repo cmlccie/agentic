@@ -13,7 +13,7 @@ time. Rules:
 import re
 from functools import cache
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -28,16 +28,16 @@ _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*-v\d+$")
 class FixtureExpected(BaseModel):
     """Deterministic expectations a fixture asserts."""
 
-    content_contains: Optional[str] = Field(
+    content_contains: str | None = Field(
         None, description="Case-insensitive substring the content must contain."
     )
-    tool_name: Optional[str] = Field(
+    tool_name: str | None = Field(
         None, description="Function name the model is expected to call."
     )
-    arguments_schema: Optional[Dict[str, Any]] = Field(
+    arguments_schema: dict[str, Any] | None = Field(
         None, description="JSON Schema the call arguments must validate against."
     )
-    min_completion_tokens: Optional[int] = Field(
+    min_completion_tokens: int | None = Field(
         None, description="Minimum completion tokens for a run to count as valid."
     )
 
@@ -48,12 +48,12 @@ class FixtureSpec(BaseModel):
     id: str
     kind: FixtureKind
     description: str
-    model_families: List[str] = Field(default_factory=lambda: ["*"])
-    messages: List[Dict[str, Any]]
-    params: Dict[str, Any] = Field(default_factory=dict)
-    tools: Optional[List[Dict[str, Any]]] = None
+    model_families: list[str] = Field(default_factory=lambda: ["*"])
+    messages: list[dict[str, Any]]
+    params: dict[str, Any] = Field(default_factory=dict)
+    tools: list[dict[str, Any]] | None = None
     expected: FixtureExpected = Field(default_factory=FixtureExpected)
-    engine_overrides: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    engine_overrides: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
     @field_validator("id")
     @classmethod
@@ -76,9 +76,9 @@ class FixtureSpec(BaseModel):
 
 
 @cache
-def load_fixtures() -> Dict[str, FixtureSpec]:
+def load_fixtures() -> dict[str, FixtureSpec]:
     """Load and validate every fixture YAML in this package, keyed by id."""
-    fixtures: Dict[str, FixtureSpec] = {}
+    fixtures: dict[str, FixtureSpec] = {}
     for path in sorted(_FIXTURE_DIR.glob("*.yaml")):
         with path.open() as handle:
             document = yaml.safe_load(handle) or {}
@@ -90,7 +90,7 @@ def load_fixtures() -> Dict[str, FixtureSpec]:
     return fixtures
 
 
-def get_fixture(fixture_id: str, kind: Optional[FixtureKind] = None) -> FixtureSpec:
+def get_fixture(fixture_id: str, kind: FixtureKind | None = None) -> FixtureSpec:
     """Return a fixture by id, optionally asserting its kind."""
     fixtures = load_fixtures()
     if fixture_id not in fixtures:

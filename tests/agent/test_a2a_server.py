@@ -411,7 +411,7 @@ async def test_sql_store_persists_tasks_and_history_across_restarts(
         task = await client.get_task(GetTaskRequest(id=task_id))
         assert task.status.state == TaskState.TASK_STATE_COMPLETED
         events = await send(client, "second", context_id=context_id)
-    artifact = [e for e in events if e.WhichOneof("payload") == "artifact_update"][0]
+    artifact = next(e for e in events if e.WhichOneof("payload") == "artifact_update")
     # first turn: prompt, tool return; second turn adds prompt, tool return
     assert artifact.artifact_update.artifact.parts[0].text == "4 requests"
 
@@ -521,7 +521,11 @@ def test_agent_card_fields_are_plain_strings_under_pure_python_protobuf() -> Non
     )
     env = {**os.environ, "PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION": "python"}
     result = subprocess.run(
-        [sys.executable, "-c", script], env=env, capture_output=True, text=True
+        [sys.executable, "-c", script],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "['JSONRPC']"

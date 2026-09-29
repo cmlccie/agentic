@@ -551,8 +551,9 @@ async def test_http_client_disconnect_cancels_the_run(tmp_path: Path) -> None:
     use_model("main", scripted_model(tool="slow", args={"seconds": 30}))
     app = make_app(tmp_path, AGENT)
     with Server(app, free_port()) as server:
-        async with httpx.AsyncClient(base_url=server.url, timeout=10) as client:
-            async with client.stream(
+        async with (
+            httpx.AsyncClient(base_url=server.url, timeout=10) as client,
+            client.stream(
                 "POST",
                 "/v1/chat/completions",
                 json={
@@ -560,10 +561,11 @@ async def test_http_client_disconnect_cancels_the_run(tmp_path: Path) -> None:
                     "stream": True,
                     "messages": [{"role": "user", "content": "hi"}],
                 },
-            ) as response:
-                async for line in response.aiter_lines():
-                    if "→ slow" in line:
-                        break
+            ) as response,
+        ):
+            async for line in response.aiter_lines():
+                if "→ slow" in line:
+                    break
         for _ in range(100):
             if SLOW_STATE["cancelled"]:
                 break

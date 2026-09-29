@@ -79,10 +79,10 @@ indent-width = 4
 target-version = "py313"
 
 [tool.ruff.lint]
-# Pin the pre-0.16 ruff default rule set (E4, E7, E9, F) so ruff upgrades that
-# expand the defaults do not silently change which rules apply.
-select = [ "E4", "E7", "E9", "F" ]
+# Use ruff's default rule set (expanded in 0.16 to pyupgrade, bugbear, simplify,
+# pylint, bandit, and more) so the codebase follows current ruff guidance.
+# The defaults include only part of B and I and none of Q, so enable them in full.
 # B: flake8-bugbear
-# I: flake8-import-order
+# I: isort
 # Q: flake8-quotes
 extend-select = [ "B", "I", "Q" ]

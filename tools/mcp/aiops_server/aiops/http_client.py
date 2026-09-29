@@ -3,7 +3,8 @@
 import ipaddress
 import json
 import os
-from typing import Any, AsyncIterator, Dict, Iterator, Optional
+from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import httpx
 
@@ -43,7 +44,7 @@ def _host_matches(host: str, entry: str) -> bool:
     return host == entry or (entry.startswith(".") and host.endswith(entry))
 
 
-def check_target_allowed(base_url: str, allowed: Optional[str] = None) -> None:
+def check_target_allowed(base_url: str, allowed: str | None = None) -> None:
     """Reject ``base_url`` unless its host is in the configured allowlist.
 
     Args:
@@ -79,7 +80,7 @@ def server_root(base_url: str) -> str:
     return normalized.removesuffix("/v1")
 
 
-def _headers(api_key: Optional[str]) -> Dict[str, str]:
+def _headers(api_key: str | None) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -88,9 +89,9 @@ def _headers(api_key: Optional[str]) -> Dict[str, str]:
 
 def build_client(
     base_url: str,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     timeout_s: float = 120.0,
-    transport: Optional[httpx.BaseTransport] = None,
+    transport: httpx.BaseTransport | None = None,
 ) -> httpx.Client:
     check_target_allowed(base_url)
     return httpx.Client(
@@ -103,9 +104,9 @@ def build_client(
 
 def build_async_client(
     base_url: str,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     timeout_s: float = 540.0,
-    transport: Optional[httpx.AsyncBaseTransport] = None,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> httpx.AsyncClient:
     check_target_allowed(base_url)
     return httpx.AsyncClient(
@@ -116,7 +117,7 @@ def build_async_client(
     )
 
 
-def _parse_sse_line(line: str) -> Optional[Dict[str, Any]]:
+def _parse_sse_line(line: str) -> dict[str, Any] | None:
     line = line.strip()
     if not line.startswith("data:"):
         return None
@@ -130,7 +131,7 @@ def _parse_sse_line(line: str) -> Optional[Dict[str, Any]]:
     return parsed if isinstance(parsed, dict) else None
 
 
-def iter_sse_json(response: httpx.Response) -> Iterator[Dict[str, Any]]:
+def iter_sse_json(response: httpx.Response) -> Iterator[dict[str, Any]]:
     """Yield parsed JSON payloads from a server-sent-events response."""
     for line in response.iter_lines():
         parsed = _parse_sse_line(line)
@@ -138,7 +139,7 @@ def iter_sse_json(response: httpx.Response) -> Iterator[Dict[str, Any]]:
             yield parsed
 
 
-async def aiter_sse_json(response: httpx.Response) -> AsyncIterator[Dict[str, Any]]:
+async def aiter_sse_json(response: httpx.Response) -> AsyncIterator[dict[str, Any]]:
     """Async variant of `iter_sse_json`."""
     async for line in response.aiter_lines():
         parsed = _parse_sse_line(line)

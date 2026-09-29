@@ -6,7 +6,7 @@ Orchestration — scaling, isolation, pod-IP resolution — belongs to the calle
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastmcp import FastMCP
 from starlette.requests import Request
@@ -56,7 +56,7 @@ async def health(request: Request) -> JSONResponse:
 def get_endpoint_info(
     base_url: str,
     inferencing_engine: Engine,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     timeout_s: float = 15.0,
 ) -> EndpointInfo:
     """Probe an OpenAI-compatible endpoint for readiness.
@@ -85,8 +85,8 @@ def get_endpoint_info(
 def check_inference(
     base_url: str,
     inferencing_engine: Engine,
-    model: Optional[str] = None,
-    api_key: Optional[str] = None,
+    model: str | None = None,
+    api_key: str | None = None,
     fixture_id: str = "inference-basic-v1",
     timeout_s: float = 120.0,
 ) -> InferenceResult:
@@ -117,10 +117,10 @@ def check_inference(
 def check_reasoning(
     base_url: str,
     inferencing_engine: Engine,
-    model: Optional[str] = None,
-    api_key: Optional[str] = None,
+    model: str | None = None,
+    api_key: str | None = None,
     fixture_id: str = "reasoning-basic-v1",
-    reasoning_params: Optional[Dict[str, Any]] = None,
+    reasoning_params: dict[str, Any] | None = None,
     timeout_s: float = 180.0,
 ) -> ReasoningResult:
     """Verify reasoning arrives as a structured field, not inline in content.
@@ -159,8 +159,8 @@ def check_reasoning(
 def check_tool_calling(
     base_url: str,
     inferencing_engine: Engine,
-    model: Optional[str] = None,
-    api_key: Optional[str] = None,
+    model: str | None = None,
+    api_key: str | None = None,
     fixture_id: str = "toolcall-weather-v1",
     tool_choice_mode: ToolChoiceMode = "both",
     timeout_s: float = 180.0,
@@ -199,8 +199,8 @@ def check_tool_calling(
 async def measure_tps(
     base_url: str,
     inferencing_engine: Engine,
-    model: Optional[str] = None,
-    api_key: Optional[str] = None,
+    model: str | None = None,
+    api_key: str | None = None,
     fixture_id: str = "tps-decode-v1",
     max_tokens: int = 512,
     repetitions: int = 3,
@@ -265,7 +265,7 @@ async def measure_tps(
 @agentic.logging.log_call(logger)
 def list_fixtures(
     kind: str = "all",
-    model_family: Optional[str] = None,
+    model_family: str | None = None,
 ) -> FixtureCatalog:
     """List available test fixtures and the server version.
 

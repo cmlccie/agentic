@@ -5,8 +5,6 @@ so response shapes and parser behavior match vLLM. Only the health endpoint
 differs: NIM serves readiness at /v1/health/ready rather than /health.
 """
 
-from typing import Optional
-
 from aiops.engines.vllm import VllmAdapter
 
 
@@ -15,5 +13,5 @@ class NimAdapter(VllmAdapter):
 
     name = "nim"
 
-    def health_path(self) -> Optional[str]:
+    def health_path(self) -> str | None:
         return "/v1/health/ready"

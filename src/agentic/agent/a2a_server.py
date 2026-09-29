@@ -128,13 +128,13 @@ def build_agent_card(server: ServerSpec, public_url: str, auth: bool) -> AgentCa
     # Pass plain strings (not the SDK's str-enum members) to protobuf fields: the
     # pure-Python protobuf runtime (used on Alpine/musl) stores str(member), e.g.
     # "TransportProtocol.JSONRPC", which clients then can't match.
-    kwargs: dict[str, Any] = dict(
-        name=card.display_name,
-        description=card.description,
-        version=card.version,
-        default_input_modes=["text/plain"],
-        default_output_modes=["text/plain"],
-        capabilities=AgentCapabilities(
+    kwargs: dict[str, Any] = {
+        "name": card.display_name,
+        "description": card.description,
+        "version": card.version,
+        "default_input_modes": ["text/plain"],
+        "default_output_modes": ["text/plain"],
+        "capabilities": AgentCapabilities(
             streaming=True,
             push_notifications=server.a2a.push_notifications.enabled,
             extensions=[
@@ -149,7 +149,7 @@ def build_agent_card(server: ServerSpec, public_url: str, auth: bool) -> AgentCa
                 )
             ],
         ),
-        skills=[
+        "skills": [
             AgentSkill(
                 id=s.id,
                 name=s.name,
@@ -161,7 +161,7 @@ def build_agent_card(server: ServerSpec, public_url: str, auth: bool) -> AgentCa
             )
             for s in card.skills
         ],
-        supported_interfaces=[
+        "supported_interfaces": [
             AgentInterface(
                 url=url,
                 protocol_binding=TransportProtocol.JSONRPC.value,
@@ -173,7 +173,7 @@ def build_agent_card(server: ServerSpec, public_url: str, auth: bool) -> AgentCa
                 protocol_version=PROTOCOL_VERSION_0_3,
             ),
         ],
-    )
+    }
     if card.icon_url:
         kwargs["icon_url"] = card.icon_url
     if card.documentation_url:

@@ -5,7 +5,7 @@ import logging
 import os
 from collections import OrderedDict
 from datetime import datetime
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
@@ -116,17 +116,17 @@ class WeatherForecast(BaseModel):
 
     latitude: float = Field(..., description="Coordinate latitude in degrees.")
     longitude: float = Field(..., description="Coordinate longitude in degrees.")
-    elevation: Optional[float] = Field(None, description="Elevation in meters.")
-    timezone: Optional[str] = Field(
+    elevation: float | None = Field(None, description="Elevation in meters.")
+    timezone: str | None = Field(
         None, description="Timezone (e.g. 'America/New_York')."
     )
-    timezone_abbreviation: Optional[str] = Field(
+    timezone_abbreviation: str | None = Field(
         None, description="Timezone abbreviation (e.g. 'GMT-4')."
     )
-    daily_units: Dict[str, str] = Field(
+    daily_units: dict[str, str] = Field(
         ..., description="Units for daily weather variables."
     )
-    daily: Dict[str, Dict[str, Any]] = Field(
+    daily: dict[str, dict[str, Any]] = Field(
         ..., description="Daily weather variables keyed by date."
     )
 
@@ -141,8 +141,8 @@ def _today(timezone: str) -> str:
 
 
 def _daily_by_date(
-    daily_data: Dict[str, List[Any]], variables: List[str]
-) -> Dict[str, Dict[str, Any]]:
+    daily_data: dict[str, list[Any]], variables: list[str]
+) -> dict[str, dict[str, Any]]:
     """Pivot Open-Meteo's column-oriented daily data into {date: {variable: value}}."""
     return {
         date: {
@@ -160,9 +160,9 @@ async def get_weather_forecast(
     latitude: float,
     longitude: float,
     timezone: str = "auto",
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    weather_variables: Optional[List[WeatherVariables]] = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    weather_variables: list[WeatherVariables] | None = None,
     time_format: TimeFormat = "iso8601",
     temperature_unit: TemperatureUnit = "fahrenheit",
     precipitation_unit: PrecipitationUnit = "inch",
@@ -236,7 +236,7 @@ class LocationInfo(BaseModel):
     name: str = Field(..., description="Name of the location.")
     latitude: float = Field(..., description="Latitude of the location.")
     longitude: float = Field(..., description="Longitude of the location.")
-    elevation: Optional[float] = Field(
+    elevation: float | None = Field(
         None, description="Elevation of the location in meters."
     )
 
@@ -247,31 +247,31 @@ class LocationInfo(BaseModel):
         ...,
         description="ISO-3166-1 alpha2 country code of the location (e.g. 'DE' for Germany).",
     )
-    admin1: Optional[str] = Field(
+    admin1: str | None = Field(
         None, description="Administrative region level 1 (e.g. state or province)."
     )
-    admin2: Optional[str] = Field(
+    admin2: str | None = Field(
         None, description="Administrative region level 2 (e.g. county or district)."
     )
-    admin3: Optional[str] = Field(
+    admin3: str | None = Field(
         None, description="Administrative region level 3 (e.g. city or town)."
     )
-    admin4: Optional[str] = Field(
+    admin4: str | None = Field(
         None,
         description="Administrative region level 4 (e.g. neighborhood or suburb).",
     )
-    postcodes: Optional[List[str]] = Field(
+    postcodes: list[str] | None = Field(
         None, description="List of postcodes associated with the location."
     )
 
-    population: Optional[int] = Field(None, description="Population of the location.")
+    population: int | None = Field(None, description="Population of the location.")
 
 
 # Most-recently-seen locations, bounded to LOCATION_CACHE_SIZE entries.
 location_cache: OrderedDict[int, LocationInfo] = OrderedDict()
 
 
-def _remember_locations(locations: List[LocationInfo]) -> None:
+def _remember_locations(locations: list[LocationInfo]) -> None:
     """Add locations to the cache, evicting the least recently seen entries."""
     for location in locations:
         location_cache[location.id] = location
@@ -283,8 +283,8 @@ def _remember_locations(locations: List[LocationInfo]) -> None:
 @mcp.tool()
 @agentic.logging.log_call(logger)
 async def get_locations(
-    name: str, country_code: Optional[str] = None, count: int = 10
-) -> List[LocationInfo]:
+    name: str, country_code: str | None = None, count: int = 10
+) -> list[LocationInfo]:
     """Search for locations by name to get their coordinates and timezone.
 
     Args:
@@ -317,7 +317,7 @@ async def get_locations(
 
 
 @mcp.resource("locations://cache")
-def locations_cache() -> List[LocationInfo]:
+def locations_cache() -> list[LocationInfo]:
     """Cached location information.
 
     This resource provides access to the most recently looked-up locations,

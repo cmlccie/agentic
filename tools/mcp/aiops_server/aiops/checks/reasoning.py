@@ -1,7 +1,7 @@
 """Reasoning-parsing check: reasoning must arrive as a structured field."""
 
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -22,11 +22,11 @@ def check_reasoning(
     client: httpx.Client,
     engine: EngineAdapter,
     fixture: FixtureSpec,
-    model: Optional[str] = None,
-    reasoning_params: Optional[Dict[str, Any]] = None,
+    model: str | None = None,
+    reasoning_params: dict[str, Any] | None = None,
 ) -> ReasoningResult:
     started = time.perf_counter()
-    checks: List[CheckItem] = []
+    checks: list[CheckItem] = []
 
     def _result(**kwargs) -> ReasoningResult:
         return ReasoningResult(
