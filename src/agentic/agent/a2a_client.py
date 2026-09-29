@@ -214,7 +214,7 @@ class A2AAgentToolset(AbstractToolset[Any]):
                 log.info(
                     "a2a: resolved agent card for %s (%s)", self.url, self._card.name
                 )
-            except Exception as exc:  # any failure means "not available yet"
+            except Exception as exc:  # noqa: BLE001 - any failure means "not available yet"
                 self._card_retry_at = time.monotonic() + _CARD_RETRY_SECONDS
                 log.warning(
                     "a2a: agent card for %s unavailable (%s); retrying in %.0fs",
@@ -370,7 +370,7 @@ class A2AAgentToolset(AbstractToolset[Any]):
                 asyncio.shield(client.cancel_task(CancelTaskRequest(id=task_id))),
                 timeout=_CANCEL_TIMEOUT,
             )
-        except Exception as exc:  # the remote task may already be finished
+        except Exception as exc:  # noqa: BLE001 - the remote task may already be finished
             log.debug("a2a: could not cancel remote task %s: %s", task_id, exc)
 
     @staticmethod

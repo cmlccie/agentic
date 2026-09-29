@@ -203,7 +203,7 @@ def initialize(conn: pg8000.dbapi.Connection) -> None:
     )
 
     # Backfill purchases across a rolling retention window ending today.
-    today = date.today()
+    today = date.today()  # noqa: DTZ011 - purchases use the local calendar date
     start = today - timedelta(days=BACKFILL_DAYS)
     logger.info(
         "Backfilling %d purchases between %s and %s",
@@ -241,7 +241,7 @@ def tick(conn: pg8000.dbapi.Connection) -> None:
         return
 
     cursor = conn.cursor()
-    today = date.today()
+    today = date.today()  # noqa: DTZ011 - purchases use the local calendar date
     new_purchases = [
         make_purchase(max_customer, max_product, today) for _ in range(HOURLY_PURCHASES)
     ]
@@ -275,19 +275,19 @@ def main() -> None:
         while True:
             try:
                 tick(conn)
-            except Exception:  # noqa: BLE001 - keep the loop alive, reconnect next tick
+            except Exception:  # keep the loop alive, reconnect next tick
                 logger.exception("Tick failed; reconnecting")
                 try:
                     conn.close()
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:
+                    logger.debug("Closing the failed connection failed", exc_info=True)
                 conn = wait_for_database()
             time.sleep(INSERT_INTERVAL_SECONDS)
     finally:
         try:
             conn.close()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            logger.debug("Closing the connection failed", exc_info=True)
 
 
 if __name__ == "__main__":

@@ -521,7 +521,11 @@ def test_agent_card_fields_are_plain_strings_under_pure_python_protobuf() -> Non
     )
     env = {**os.environ, "PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION": "python"}
     result = subprocess.run(
-        [sys.executable, "-c", script], env=env, capture_output=True, text=True
+        [sys.executable, "-c", script],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "['JSONRPC']"

@@ -68,6 +68,7 @@ def test_tracing_setup_and_a_traced_request(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         timeout=60,
+        check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.startswith("ok")
