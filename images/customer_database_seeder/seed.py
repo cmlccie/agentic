@@ -280,14 +280,16 @@ def main() -> None:
                 try:
                     conn.close()
                 except Exception:
-                    logger.debug("Closing the failed connection failed", exc_info=True)
+                    logger.warning(
+                        "Closing the failed connection failed", exc_info=True
+                    )
                 conn = wait_for_database()
             time.sleep(INSERT_INTERVAL_SECONDS)
     finally:
         try:
             conn.close()
         except Exception:
-            logger.debug("Closing the connection failed", exc_info=True)
+            logger.warning("Closing the connection failed", exc_info=True)
 
 
 if __name__ == "__main__":
