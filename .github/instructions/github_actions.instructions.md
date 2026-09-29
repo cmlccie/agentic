@@ -43,7 +43,7 @@ For Python container builds, use the reusable workflow `.github/workflows/reusab
 ### Triggers
 
 - Push and pull request to `main` with path filters for the component, its workflow file, and the reusable workflow
-- Published releases
+- Push of a SemVer tag (`v*.*.*`), which builds and publishes every image because path filters do not apply to tag pushes
 - `workflow_run` after "Build Python Base Image" completes on `main` (for images built `FROM` the base image)
 
 Jobs triggered by `workflow_run` run on every completion of the upstream workflow, including failures. Guard the calling job so application images are only rebuilt on top of a successful base image build:
@@ -59,6 +59,8 @@ jobs:
 ### Base Image Dependency
 
 Application images build `FROM ${BASE_IMAGE}`, which defaults to the published `ghcr.io/cmlccie/agentic/python:latest`. Changes to `src/agentic`, `pyproject.toml`, or `uv.lock` reach application images through the base image: the base image workflow publishes a new `latest` on `main`, and its `workflow_run` completion rebuilds the application images. Application workflows therefore do not path-filter on `src/**`; a direct trigger would build against the previous base image.
+
+Version tag builds of application images run alongside the base image build for the same tag and use the published `latest` base image, which matches the tagged code when the tag points at the head of `main`.
 
 Pull request builds of application images use the published base image, so they do not exercise unmerged `src/agentic` changes. `CI` covers those changes with tests. Pass `base-image` (for example, a digest-pinned reference) when a build must be reproducible against a specific base image.
 
@@ -77,11 +79,13 @@ See `.github/workflows/build-tools-mcp-weather-server.yml` for a complete workin
 
 The reusable workflow automatically handles image tagging with:
 
-- Semantic versioning patterns for releases (`{{version}}`, `{{major}}.{{minor}}`, `{{major}}`)
+- Semantic versioning patterns for `vX.Y.Z` tag pushes (`{{version}}`, `{{major}}.{{minor}}`, `{{major}}`), giving `X.Y.Z`, `X.Y`, and `X` (only `X.Y.Z` for prereleases)
 - Branch names for development builds (`{{branch}}`)
 - Commit SHA for traceability (`{{branch}}-{{sha}}`), except on pull request builds
 - `latest` tag only for default branch builds
 - Pull request references for PR builds (computed but not pushed)
+
+The `org.opencontainers.image.*` labels come from `docker/metadata-action`. `org.opencontainers.image.version` is the highest-priority tag, so a `vX.Y.Z` tag push labels the image with version `X.Y.Z`.
 
 ### Automatic Features
 

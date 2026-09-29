@@ -128,7 +128,7 @@ See `.github/instructions/github_actions.instructions.md` for the full ruleset. 
 
 - Place workflows in `.github/workflows/` with `build-<image-name>.yml` naming.
 - For Python container builds, use the reusable workflow `.github/workflows/reusable-build-python-container-image.yml`.
-- Trigger on push/PR to `main` with path filters, release events, and optionally `workflow_run` after base image builds.
+- Trigger on push/PR to `main` with path filters, SemVer tag pushes (`v*.*.*`), and optionally `workflow_run` after base image builds.
 - Guard `workflow_run` jobs with `github.event.workflow_run.conclusion == 'success'`.
 - Build but don't push images on pull requests.
 - Use GitHub Container Registry (`ghcr.io`) for all images.
