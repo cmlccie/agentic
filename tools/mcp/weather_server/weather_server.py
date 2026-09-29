@@ -3,18 +3,18 @@
 
 import logging
 import os
+from collections import OrderedDict
 from datetime import datetime
 from typing import Annotated, Any, Dict, List, Literal, Optional
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import requests
+import httpx
 import typer
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 import agentic.logging
 
-agentic.logging.fancy()
 logger = logging.getLogger("weather_server")
 
 
@@ -24,7 +24,10 @@ PORT = int(os.environ.get("PORT", "8000"))
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
-location_cache: dict[int, "LocationInfo"] = {}
+HTTP_TIMEOUT = httpx.Timeout(float(os.environ.get("HTTP_TIMEOUT_S", "10")))
+
+LOCATION_CACHE_SIZE = 256
+
 
 # -------------------------------------------------------------------------------------------------
 # MCP Weather Server
@@ -32,6 +35,30 @@ location_cache: dict[int, "LocationInfo"] = {}
 
 
 mcp = FastMCP("MCP Weather Server")
+
+
+# --------------------------------------------------------------------------------------
+# HTTP Helper
+# --------------------------------------------------------------------------------------
+
+
+def _http_client(
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> httpx.AsyncClient:
+    """Create the HTTP client used for Open-Meteo requests.
+
+    Args:
+        transport: Optional transport override (used by tests to mock HTTP).
+    """
+    return httpx.AsyncClient(timeout=HTTP_TIMEOUT, transport=transport)
+
+
+async def _get_json(url: str, params: dict[str, Any]) -> Any:
+    """GET ``url`` with ``params`` and return the decoded JSON body."""
+    async with _http_client() as client:
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        return response.json()
 
 
 # --------------------------------------------------------------------------------------
@@ -60,6 +87,15 @@ WeatherVariables = Literal[
     "wind_speed_10m_max",
     "wind_speed_10m_min",
 ]
+
+DEFAULT_WEATHER_VARIABLES: tuple[WeatherVariables, ...] = (
+    "cloud_cover_mean",
+    "precipitation_probability_max",
+    "precipitation_sum",
+    "relative_humidity_2m_mean",
+    "temperature_2m_max",
+    "temperature_2m_min",
+)
 
 PrecipitationUnit = Literal["mm", "inch"]
 
@@ -91,13 +127,36 @@ class WeatherForecast(BaseModel):
         ..., description="Units for daily weather variables."
     )
     daily: Dict[str, Dict[str, Any]] = Field(
-        ..., description="Daily weather variables."
+        ..., description="Daily weather variables keyed by date."
     )
+
+
+def _today(timezone: str) -> str:
+    """Return today's ISO date in ``timezone`` (local time for "auto" or unknown)."""
+    try:
+        tz = None if timezone == "auto" else ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        tz = None
+    return datetime.now(tz).date().isoformat()
+
+
+def _daily_by_date(
+    daily_data: Dict[str, List[Any]], variables: List[str]
+) -> Dict[str, Dict[str, Any]]:
+    """Pivot Open-Meteo's column-oriented daily data into {date: {variable: value}}."""
+    return {
+        date: {
+            variable: daily_data[variable][i]
+            for variable in variables
+            if i < len(daily_data.get(variable, []))
+        }
+        for i, date in enumerate(daily_data.get("time", []))
+    }
 
 
 @mcp.tool()
 @agentic.logging.log_call(logger)
-def get_weather_forecast(
+async def get_weather_forecast(
     latitude: float,
     longitude: float,
     timezone: str = "auto",
@@ -109,98 +168,60 @@ def get_weather_forecast(
     precipitation_unit: PrecipitationUnit = "inch",
     wind_speed_unit: WindSpeedUnit = "mph",
 ) -> WeatherForecast:
-    """Get the weather forecast for the provided coordinates.
+    """Get the daily weather forecast for the provided coordinates.
 
-    Includes sunrise and sunset times; minimum, maximum, and mean temperatures (in Fahrenheit);
-    rain, showers, and snowfall precipitation (in inches);
-    precipitation probability (in percentage).
-
-    Default daily variables include:
-        - cloud_cover_mean
-        - precipitation_probability_max
-        - precipitation_sum
-        - temperature_2m_max
-        - temperature_2m_min
+    When weather_variables is omitted, the forecast includes: cloud_cover_mean,
+    precipitation_probability_max, precipitation_sum, relative_humidity_2m_mean,
+    temperature_2m_max, and temperature_2m_min. Request sunrise, sunset, rain_sum,
+    showers_sum, snowfall_sum, wind, and other variables explicitly. The units of
+    every returned variable are listed in daily_units.
 
     Args:
         latitude: Coordinate latitude in degrees.
         longitude: Coordinate longitude in degrees.
-        timezone: Timezone for the forecast (e.g. 'America/New_York', default is "auto").
-        start_date: Start date in ISO8601 (YYYY-MM-DD) format for the forecast (default is today).
-        end_date: End date in ISO8601 (YYYY-MM-DD) format for the forecast (default is today).
-        daily: Set of daily weather variables to include (default is a predefined set).
+        timezone: IANA timezone for dates and times (e.g. 'America/New_York');
+            "auto" (default) uses the timezone of the coordinates.
+        start_date: First forecast date as YYYY-MM-DD (default: today).
+        end_date: Last forecast date as YYYY-MM-DD (default: today).
+        weather_variables: Daily weather variables to include (default: the set
+            listed above).
+        time_format: "iso8601" (default) or "unixtime" for dates and times.
+        temperature_unit: "fahrenheit" (default) or "celsius".
+        precipitation_unit: "inch" (default) or "mm".
+        wind_speed_unit: "mph" (default), "kmh", "ms", or "kn".
 
     Returns:
-        WeatherForecast: The weather forecast data including requested daily variables.
+        WeatherForecast: Location metadata, daily_units, and daily values keyed by
+        date.
     """
-    # Get today's date in the specified timezone
-    if timezone == "auto":
-        today = datetime.now().date().isoformat()
-    else:
-        try:
-            tz = ZoneInfo(timezone)
-            today = datetime.now(tz).date().isoformat()
-        except Exception:
-            # Fallback to local time if timezone is invalid
-            today = datetime.now().date().isoformat()
+    today = _today(timezone)
+    variables = sorted(set(weather_variables or DEFAULT_WEATHER_VARIABLES))
 
-    start_date = start_date or today
-    end_date = end_date or today
-
-    weather_variables = (
-        list(set(weather_variables))
-        if weather_variables
-        else [
-            "cloud_cover_mean",
-            "precipitation_probability_max",
-            "precipitation_sum",
-            "relative_humidity_2m_mean",
-            "temperature_2m_max",
-            "temperature_2m_min",
-        ]
+    data = await _get_json(
+        OPEN_METEO_FORECAST_URL,
+        {
+            "latitude": latitude,
+            "longitude": longitude,
+            "timezone": timezone,
+            "start_date": start_date or today,
+            "end_date": end_date or today,
+            "daily": ",".join(variables),
+            "timeformat": time_format,
+            "temperature_unit": temperature_unit,
+            "precipitation_unit": precipitation_unit,
+            "wind_speed_unit": wind_speed_unit,
+        },
     )
 
-    request_parameters = {
-        "latitude": latitude,
-        "longitude": longitude,
-        "timezone": timezone,
-        "start_date": start_date,
-        "end_date": end_date,
-        "daily": ",".join(weather_variables),
-        "timeformat": time_format,
-        "temperature_unit": temperature_unit,
-        "precipitation_unit": precipitation_unit,
-        "wind_speed_unit": wind_speed_unit,
-    }
-
-    response = requests.get(OPEN_METEO_FORECAST_URL, params=request_parameters)
-    response.raise_for_status()
-    data = response.json()
-
-    # Extract daily forecast data
-    daily_data = data.get("daily", {})
-    daily_units = data.get("daily_units", {})
-
-    # Transform daily data to match format: {date: {variable: value, ...}, ...}
-    daily_dict = {}
-    dates = daily_data.get("time", [])
-
-    for i, date in enumerate(dates):
-        daily_dict[date] = {}
-        for variable in weather_variables:
-            if variable in daily_data and i < len(daily_data[variable]):
-                daily_dict[date][variable] = daily_data[variable][i]
-
-    weather_forecast = WeatherForecast(
+    return WeatherForecast(
         latitude=data.get("latitude", latitude),
         longitude=data.get("longitude", longitude),
         elevation=data.get("elevation"),
         timezone=data.get("timezone"),
         timezone_abbreviation=data.get("timezone_abbreviation"),
-        daily_units=daily_units,
-        daily=daily_dict,
+        daily_units=data.get("daily_units", {}),
+        daily=_daily_by_date(data.get("daily", {}), variables),
     )
-    return weather_forecast
 
 
 # --------------------------------------------------------------------------------------
@@ -246,45 +267,48 @@ class LocationInfo(BaseModel):
     population: Optional[int] = Field(None, description="Population of the location.")
 
 
+# Most-recently-seen locations, bounded to LOCATION_CACHE_SIZE entries.
+location_cache: OrderedDict[int, LocationInfo] = OrderedDict()
+
+
+def _remember_locations(locations: List[LocationInfo]) -> None:
+    """Add locations to the cache, evicting the least recently seen entries."""
+    for location in locations:
+        location_cache[location.id] = location
+        location_cache.move_to_end(location.id)
+    while len(location_cache) > LOCATION_CACHE_SIZE:
+        location_cache.popitem(last=False)
+
+
 @mcp.tool()
 @agentic.logging.log_call(logger)
-def get_locations(
+async def get_locations(
     name: str, country_code: Optional[str] = None, count: int = 10
 ) -> List[LocationInfo]:
-    """Get location information.
+    """Search for locations by name to get their coordinates and timezone.
 
     Args:
-        location_name: Name of the location (e.g., city name).
-        country_code: Optional ISO-3166-1 alpha2 country code to narrow down the search (e.g., 'US' for the United States).
+        name: Name of the location to search for (e.g. a city name).
+        country_code: Optional ISO-3166-1 alpha2 country code to narrow down the
+            search (e.g. 'US' for the United States).
+        count: Maximum number of matching locations to return (default: 10).
 
     Returns:
-        List[LocationInfo]: A list of locations matching the search criteria.
+        List[LocationInfo]: Locations matching the search criteria.
     """
-
-    request_parameters = {
+    params: dict[str, Any] = {
         "name": name,
         "count": count,
         "language": "en",
         "format": "json",
     }
-
     if country_code is not None:
-        request_parameters["countryCode"] = country_code
+        params["countryCode"] = country_code
 
-    response = requests.get(OPEN_METEO_GEOCODING_URL, params=request_parameters)
-    response.raise_for_status()
-    data = response.json()
-    results = data.get("results", [])
-
-    location_information = [
-        LocationInfo.model_validate(location) for location in results
-    ]
-
-    # Update the location cache
-    for location in location_information:
-        location_cache[location.id] = location
-
-    return location_information
+    data = await _get_json(OPEN_METEO_GEOCODING_URL, params)
+    locations = [LocationInfo.model_validate(r) for r in data.get("results", [])]
+    _remember_locations(locations)
+    return locations
 
 
 # --------------------------------------------------------------------------------------
@@ -296,9 +320,9 @@ def get_locations(
 def locations_cache() -> List[LocationInfo]:
     """Cached location information.
 
-    This resource provides access to a cache of known locations, including their
-    latitude and longitude coordinates, elevation, timezone, and administrative
-    districts.
+    This resource provides access to the most recently looked-up locations,
+    including their latitude and longitude coordinates, elevation, timezone, and
+    administrative districts.
 
     Returns:
         List[LocationInfo]: A list of cached locations.
@@ -326,7 +350,8 @@ def main(
     transport: Annotated[Literal["stdio", "http"], typer.Argument()] = "stdio",
 ) -> None:
     """Model Context Protocol (MCP) Weather Server."""
-    logger.info(f"Starting {transport} MCP Weather Server")
+    agentic.logging.fancy()
+    logger.info("Starting %s MCP Weather Server", transport)
 
     match transport:
         case "stdio":

@@ -1,4 +1,7 @@
-FROM ghcr.io/cmlccie/agentic/python:latest
+# Override BASE_IMAGE to build against a specific (e.g. digest-pinned or locally built)
+# base image: --build-arg BASE_IMAGE=agentic/python:local
+ARG BASE_IMAGE=ghcr.io/cmlccie/agentic/python:latest
+FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.title="Customer Database Seeder"
 LABEL org.opencontainers.image.description="Initializes and continuously maintains a small, active demo dataset in the customer PostgreSQL database."
@@ -6,11 +9,11 @@ LABEL org.opencontainers.image.documentation="https://github.com/cmlccie/agentic
 LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 
 # faker is only needed by the seeder; pg8000 comes from the base image.
-RUN pip install --no-cache-dir faker
+RUN pip install --no-cache-dir faker==40.39.0
 
 COPY seed.py ./
 RUN chmod +x seed.py
 RUN chown -R appuser:appuser /app
-USER appuser
+USER 10000:10000
 
 ENTRYPOINT ["python", "/app/seed.py"]

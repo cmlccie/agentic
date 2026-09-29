@@ -30,7 +30,6 @@ from aiops.models import (
     TpsResult,
 )
 
-agentic.logging.fancy()
 logger = logging.getLogger("aiops_server")
 
 mcp = FastMCP("MCP AIOps Server")

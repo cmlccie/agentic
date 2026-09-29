@@ -10,7 +10,8 @@ LABEL org.opencontainers.image.source="https://github.com/cmlccie/agentic"
 # --------------------------------------------------------------------------------------
 
 COPY requirements.txt /opt/base-image/requirements.txt
-RUN apk add --no-cache git && pip install --no-cache-dir -r /opt/base-image/requirements.txt
+# requirements.txt includes hashes, so pip verifies every downloaded distribution.
+RUN pip install --no-cache-dir --require-hashes -r /opt/base-image/requirements.txt
 
 
 # --------------------------------------------------------------------------------------
@@ -26,14 +27,29 @@ RUN pip install --no-cache-dir --no-deps /opt/base-image/dist/*.tar.gz
 
 
 # --------------------------------------------------------------------------------------
+# Runtime Environment
+# --------------------------------------------------------------------------------------
+
+# Bytecode is precompiled by pip above; don't write .pyc files at runtime (supports
+# read-only root filesystems), flush output immediately, and suppress the pydantic-ai
+# first-run banner.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYDANTIC_AI_NO_BANNER=1
+
+
+# --------------------------------------------------------------------------------------
 # Create Non-Root User & Setup App Directory
 # --------------------------------------------------------------------------------------
 
-RUN adduser -D -u 10000 -s /bin/sh appuser && \
+# Fixed UID/GID 10000 so application images can use a numeric USER, which Kubernetes
+# requires to verify runAsNonRoot.
+RUN addgroup -g 10000 appuser && \
+    adduser -D -u 10000 -G appuser -s /bin/sh appuser && \
     mkdir /app && \
     chown -R appuser:appuser /app
 
 WORKDIR /app
 
-# Don't switch to non-root user here; leave it to the application Containerfiles
-# USER appuser
+# Don't switch to the non-root user here; leave it to the application Containerfiles
+# (USER 10000:10000).

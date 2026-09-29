@@ -41,6 +41,8 @@ The HTTP MCP endpoint is exposed at `/mcp`.
 
 ### Required Environment Variables
 
+The server checks these at startup; importing the module does not require them.
+
 - `MERAKI_API_KEY`: Meraki Dashboard API key
 - `MERAKI_NETWORK_ID`: Target network ID
 
@@ -48,6 +50,7 @@ The HTTP MCP endpoint is exposed at `/mcp`.
 
 - `HOST`: `0.0.0.0` by default. HTTP server bind host.
 - `PORT`: `8000` by default. HTTP server bind port.
+- `HTTP_TIMEOUT_S`: `30` by default. Timeout in seconds for Meraki Dashboard API requests.
 
 ## Build Locally
 

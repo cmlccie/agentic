@@ -53,6 +53,32 @@ Adapters never issue HTTP.
 5. Add tests: fixture validation, adapter behavior on canned payloads, and a
    `httpx.MockTransport` end-to-end case.
 
+## Security: probe targets
+
+Every tool sends HTTP requests to a caller-supplied `base_url`, so the server can reach
+anything its network can reach (server-side request forgery by design). Deploy it
+in-cluster only, never on a public endpoint, and restrict its egress with a
+NetworkPolicy.
+
+To limit targets in the server itself, set `AIOPS_ALLOWED_TARGETS` to a comma-separated
+list of entries; a tool call whose `base_url` host matches none of them fails with an
+error. When the variable is unset or empty, any `http(s)` target is allowed.
+
+| Entry form    | Example              | Matches                                    |
+| ------------- | -------------------- | ------------------------------------------ |
+| CIDR          | `10.0.0.0/8`         | IP-literal hosts inside the network        |
+| Hostname      | `model.ns.svc`       | That exact hostname (case-insensitive)     |
+| Domain suffix | `.svc.cluster.local` | Any hostname ending with the suffix        |
+
+Hostnames are matched as written and are not resolved, so list pod CIDRs for pod-IP
+targets and hostnames or suffixes for Service URLs.
+
+## Configuration
+
+- `HOST`: `0.0.0.0` by default. HTTP server bind host.
+- `PORT`: `8000` by default. HTTP server bind port.
+- `AIOPS_ALLOWED_TARGETS`: Unset by default. Optional probe-target allowlist (see above).
+
 ## Running
 
 ```bash
@@ -61,6 +87,25 @@ uv run tools/mcp/aiops_server/aiops_server.py
 
 # Streamable HTTP on :8000 (serves /mcp and /health)
 uv run tools/mcp/aiops_server/aiops_server.py http
+
+# Container, restricted to in-cluster targets
+docker run --rm -p 8000:8000 \
+  -e AIOPS_ALLOWED_TARGETS="10.0.0.0/8,.svc.cluster.local" \
+  ghcr.io/cmlccie/agentic/tools-mcp-aiops-server:latest http
+```
+
+## Build Locally
+
+```bash
+# Build with the repository Makefile
+make tools-mcp-aiops-server
+
+# Build for your current platform
+docker build -t tools-mcp-aiops-server tools/mcp/aiops_server
+
+# Build for multiple platforms
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t agentic/tools-mcp-aiops-server:local tools/mcp/aiops_server
 ```
 
 ## TPS methodology

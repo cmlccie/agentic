@@ -1,5 +1,7 @@
 # Multi-Interface Pydantic AI Agent Container — Architecture Design
 
+> **Status: superseded.** This was the original design for `src/agentic/simple_agent`. The runtime has since been consolidated with the orchestrator into `src/agentic/agent`; see [agent_runtime_design.md](agent_runtime_design.md) for the current design and the decisions that changed (no drain state machine, a2a-sdk instead of fasta2a, an in-house OpenAI API, `vllm:` models instead of the `openai-compat` sentinel).
+
 ## Design Principles
 
 - **Single process, single port** — one FastAPI root app, all interfaces mounted as ASGI sub-apps or routers
@@ -267,6 +269,7 @@ class ReloadCoordinator:
       - watcher task (calls trigger_reload on file change)
       - SIGHUP handler (calls trigger_reload on signal)
     """
+
     drain_timeout: float = 30.0
 
     state: AgentState = field(default=AgentState.RUNNING, init=False)
@@ -318,8 +321,9 @@ class ReloadCoordinator:
         Transitions to RELOADING state.
         """
         log.info(
-            "reload.drain: waiting for %d in-flight requests "
-            "(timeout=%ss)", self.in_flight_count, self.drain_timeout
+            "reload.drain: waiting for %d in-flight requests (timeout=%ss)",
+            self.in_flight_count,
+            self.drain_timeout,
         )
         try:
             await asyncio.wait_for(self._drained.wait(), timeout=self.drain_timeout)
@@ -327,7 +331,9 @@ class ReloadCoordinator:
         except asyncio.TimeoutError:
             log.warning(
                 "reload.drain: timeout after %ss with %d requests still in flight — "
-                "forcing reload", self.drain_timeout, self.in_flight_count
+                "forcing reload",
+                self.drain_timeout,
+                self.in_flight_count,
             )
         finally:
             self.state = AgentState.RELOADING
@@ -529,6 +535,7 @@ def _expand_secret_refs(value: str, secrets: AgentSecrets) -> str:
     Key is lowercased to match Kubernetes Secret key naming.
     Falls back to os.environ for local dev convenience.
     """
+
     def _resolve(m: re.Match) -> str:
         key = m.group(1).lower()
         val = secrets.get(key)
@@ -552,8 +559,7 @@ def _expand_headers_in_spec(spec_dict: dict, secrets: AgentSecrets) -> dict:
         mcp_conf = cap.get("MCP", {})
         if headers := mcp_conf.get("headers"):
             mcp_conf["headers"] = {
-                k: _expand_secret_refs(v, secrets)
-                for k, v in headers.items()
+                k: _expand_secret_refs(v, secrets) for k, v in headers.items()
             }
     return spec_dict
 
@@ -584,6 +590,7 @@ def load_agent(spec_path: Path, secrets: AgentSecrets) -> Agent:
             )
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
+
         model_override = OpenAIChatModel(
             raw.get("model_id", "custom"),
             provider=OpenAIProvider(base_url=base_url, api_key=api_key),
@@ -609,7 +616,12 @@ from pydantic_ai import Agent
 
 from config.agent_spec import load_agent
 from config.server_spec import AgentSecrets, BrokerBackend, ServerSpec, load_server_spec
-from reload import AgentState, ReloadCoordinator, _watch_config_directory, install_sighup_handler
+from reload import (
+    AgentState,
+    ReloadCoordinator,
+    _watch_config_directory,
+    install_sighup_handler,
+)
 
 if TYPE_CHECKING:
     pass
@@ -628,6 +640,7 @@ class AppState:
     agent and server_spec are replaced atomically on each reload cycle.
     coordinator and secrets are long-lived singletons for the process lifetime.
     """
+
     coordinator: ReloadCoordinator
     secrets: AgentSecrets
     # Replaced on each reload:
@@ -699,7 +712,8 @@ async def _run_reload_loop(app: FastAPI) -> None:
         except Exception as e:
             log.error(
                 "reload_loop: reload failed: %s — agent remains in RELOADING state; "
-                "will retry on next trigger", e
+                "will retry on next trigger",
+                e,
             )
             # Don't mark_running — leave in RELOADING (503) until next trigger succeeds.
             # Operator can fix the config and send another SIGHUP or update the ConfigMap.
@@ -752,7 +766,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         # Wait briefly for tasks to acknowledge cancellation
         await asyncio.gather(
-            reload_task, watcher_task, secrets_watcher_task,
+            reload_task,
+            watcher_task,
+            secrets_watcher_task,
             return_exceptions=True,
         )
 ```
@@ -918,14 +934,18 @@ def build_openai_router(initial_agent, model_name: str) -> APIRouter:
     This makes the handler reload-safe: after a reload, new requests use the new agent.
     """
 
-    async def run_completion(model: str, messages: list[dict], body: dict, request: Request) -> str:
+    async def run_completion(
+        model: str, messages: list[dict], body: dict, request: Request
+    ) -> str:
         agent = request.app.state.app_state.agent
         history = [{"role": m["role"], "content": m["content"]} for m in messages[:-1]]
         user_prompt = messages[-1]["content"] if messages else ""
         result = await agent.run(user_prompt, message_history=history)
         return result.output
 
-    async def run_stream(model: str, messages: list[dict], body: dict, request: Request):
+    async def run_stream(
+        model: str, messages: list[dict], body: dict, request: Request
+    ):
         agent = request.app.state.app_state.agent
         history = [{"role": m["role"], "content": m["content"]} for m in messages[:-1]]
         user_prompt = messages[-1]["content"] if messages else ""

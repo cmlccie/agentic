@@ -4,15 +4,15 @@
 import logging
 import os
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
-import requests
+import httpx
 import typer
 from fastmcp import FastMCP
 from pydantic import BaseModel, Field
 
 import agentic.logging
 
-agentic.logging.fancy()
 logger = logging.getLogger("meraki_server")
 
 
@@ -20,16 +20,18 @@ logger = logging.getLogger("meraki_server")
 # Environment Variables
 # -------------------------------------------------------------------------------------------------
 
-MERAKI_API_KEY = os.environ.get("MERAKI_API_KEY")
-MERAKI_NETWORK_ID = os.environ.get("MERAKI_NETWORK_ID")
-
-if not MERAKI_API_KEY:
-    raise EnvironmentError("Environment variable MERAKI_API_KEY is not set.")
-if not MERAKI_NETWORK_ID:
-    raise EnvironmentError("Environment variable MERAKI_NETWORK_ID is not set.")
-
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8000"))
+
+HTTP_TIMEOUT = httpx.Timeout(float(os.environ.get("HTTP_TIMEOUT_S", "30")))
+
+
+def _require_env(name: str) -> str:
+    """Return a required environment variable, failing with a clear message."""
+    value = os.environ.get(name)
+    if not value:
+        raise EnvironmentError(f"Environment variable {name} is not set.")
+    return value
 
 
 # -------------------------------------------------------------------------------------------------
@@ -46,16 +48,32 @@ mcp = FastMCP("MCP Meraki")
 MERAKI_BASE_URL = "https://api.meraki.com/api/v1"
 
 
-def _meraki_get(path: str, params: dict[str, Any] | None = None) -> Any:
-    """Make an authenticated GET request to the Meraki Dashboard API."""
-    url = f"{MERAKI_BASE_URL}{path}"
-    headers = {
-        "X-Cisco-Meraki-API-Key": MERAKI_API_KEY,
-        "Accept": "application/json",
-    }
-    response = requests.get(url, headers=headers, params=params, timeout=30)
-    response.raise_for_status()
-    return response.json()
+def _http_client(
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> httpx.AsyncClient:
+    """Create an authenticated Meraki Dashboard API client.
+
+    Args:
+        transport: Optional transport override (used by tests to mock HTTP).
+    """
+    return httpx.AsyncClient(
+        base_url=MERAKI_BASE_URL,
+        headers={
+            "X-Cisco-Meraki-API-Key": _require_env("MERAKI_API_KEY"),
+            "Accept": "application/json",
+        },
+        timeout=HTTP_TIMEOUT,
+        transport=transport,
+    )
+
+
+async def _network_get(path: str, params: dict[str, Any] | None = None) -> Any:
+    """GET a path under the configured network and return the decoded JSON body."""
+    network_id = quote(_require_env("MERAKI_NETWORK_ID"), safe="")
+    async with _http_client() as client:
+        response = await client.get(f"/networks/{network_id}{path}", params=params)
+        response.raise_for_status()
+        return response.json()
 
 
 # -------------------------------------------------------------------------------------------------
@@ -88,21 +106,21 @@ class Client(BaseModel):
 
 @mcp.tool()
 @agentic.logging.log_call(logger)
-def list_clients(
+async def list_clients(
     timespan: int = 86400,
     per_page: int = 100,
 ) -> list[Client]:
     """List clients on the network.
+
     Args:
         timespan: Timespan in seconds to search for clients (default: 86400 = 24h).
-        per_page: Number of clients to return per page (default: 50).
+        per_page: Maximum number of clients to return (default: 100).
 
     Returns:
         List of clients found on the network.
     """
-    data = _meraki_get(
-        f"/networks/{MERAKI_NETWORK_ID}/clients",
-        params={"timespan": timespan, "perPage": per_page},
+    data = await _network_get(
+        "/clients", params={"timespan": timespan, "perPage": per_page}
     )
     return [
         Client(
@@ -141,8 +159,12 @@ class ClientDetail(BaseModel):
     ssid: str | None = Field(description="Wireless SSID the client is connected to")
     switchport: str | None = Field(description="Switch port the client is connected to")
     status: str = Field(description="Client status (Online or Offline)")
-    first_seen: int = Field(description="Timestamp when the client was first seen")
-    last_seen: int = Field(description="Timestamp when the client was last seen")
+    first_seen: int | None = Field(
+        description="Unix timestamp when the client was first seen"
+    )
+    last_seen: int | None = Field(
+        description="Unix timestamp when the client was last seen"
+    )
     manufacturer: str | None = Field(description="Device manufacturer")
     os: str | None = Field(description="Operating system")
     usage_sent: float = Field(description="Data sent in bytes")
@@ -155,16 +177,16 @@ class ClientDetail(BaseModel):
 
 @mcp.tool()
 @agentic.logging.log_call(logger)
-def get_client_details(client_id: str) -> ClientDetail:
+async def get_client_details(client_id: str) -> ClientDetail:
     """Get detailed information for a specific client.
 
     Args:
-        client_id: The client ID returned by search_clients.
+        client_id: The client ID returned by list_clients.
 
     Returns:
         Detailed client information including wireless capabilities and notes.
     """
-    c = _meraki_get(f"/networks/{MERAKI_NETWORK_ID}/clients/{client_id}")
+    c = await _network_get(f"/clients/{quote(client_id, safe='')}")
     return ClientDetail(
         id=c.get("id", ""),
         mac=c.get("mac", ""),
@@ -175,8 +197,8 @@ def get_client_details(client_id: str) -> ClientDetail:
         ssid=c.get("ssid"),
         switchport=c.get("switchport"),
         status=c.get("status", ""),
-        first_seen=c.get("firstSeen", ""),
-        last_seen=c.get("lastSeen", ""),
+        first_seen=c.get("firstSeen"),
+        last_seen=c.get("lastSeen"),
         manufacturer=c.get("manufacturer"),
         os=c.get("os"),
         usage_sent=c.get("usage", {}).get("sent", 0),
@@ -202,7 +224,7 @@ class ClientConnectionStats(BaseModel):
 
 @mcp.tool()
 @agentic.logging.log_call(logger)
-def get_client_connection_stats(
+async def get_client_connection_stats(
     client_id: str,
     timespan: int = 86400,
 ) -> ClientConnectionStats:
@@ -212,14 +234,14 @@ def get_client_connection_stats(
     association -> authentication -> DHCP -> DNS -> success.
 
     Args:
-        client_id: The client ID returned by search_clients.
+        client_id: The client ID returned by list_clients.
         timespan: Timespan in seconds (default: 86400 = 24h, max: 604800 = 7 days).
 
     Returns:
         Connection statistics showing counts for each connection step.
     """
-    data = _meraki_get(
-        f"/networks/{MERAKI_NETWORK_ID}/wireless/clients/{client_id}/connectionStats",
+    data = await _network_get(
+        f"/wireless/clients/{quote(client_id, safe='')}/connectionStats",
         params={"timespan": timespan},
     )
 
@@ -255,7 +277,7 @@ class ConnectivityEvent(BaseModel):
 
 @mcp.tool()
 @agentic.logging.log_call(logger)
-def get_client_connectivity_events(
+async def get_client_connectivity_events(
     client_id: str,
     per_page: int = 25,
     severity: str | None = None,
@@ -266,7 +288,7 @@ def get_client_connectivity_events(
     disassociations, roaming, and connection failures.
 
     Args:
-        client_id: The client ID returned by search_clients.
+        client_id: The client ID returned by list_clients.
         per_page: Number of events to return (default: 25).
         severity: Filter by severity level (good, info, warn, bad) or None for all.
 
@@ -277,8 +299,8 @@ def get_client_connectivity_events(
     if severity:
         params["includedSeverities[]"] = severity
 
-    data = _meraki_get(
-        f"/networks/{MERAKI_NETWORK_ID}/wireless/clients/{client_id}/connectivityEvents",
+    data = await _network_get(
+        f"/wireless/clients/{quote(client_id, safe='')}/connectivityEvents",
         params=params,
     )
 
@@ -308,7 +330,13 @@ def main(
     transport: Annotated[Literal["stdio", "http"], typer.Argument()] = "stdio",
 ) -> None:
     """Model Context Protocol (MCP) Meraki Server."""
-    logger.info(f"Starting {transport} MCP Meraki Server")
+    agentic.logging.fancy()
+
+    # Fail fast at startup rather than on the first tool call.
+    for name in ("MERAKI_API_KEY", "MERAKI_NETWORK_ID"):
+        _require_env(name)
+
+    logger.info("Starting %s MCP Meraki Server", transport)
 
     match transport:
         case "stdio":

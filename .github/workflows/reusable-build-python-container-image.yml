@@ -26,10 +26,17 @@ on:
         required: false
         type: string
         default: ""
+      base-image:
+        description: "Base image passed as the BASE_IMAGE build-arg (optional; defaults to the Containerfile's ARG default)"
+        required: false
+        type: string
+        default: ""
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/${{ inputs.image-name }}
+  # Pull request builds verify that the image builds; they are never pushed.
+  PUSH: ${{ github.event_name != 'pull_request' }}
 
 jobs:
   build:
@@ -55,6 +62,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to Container Registry
+        if: ${{ env.PUSH == 'true' }}
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -72,7 +80,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha,prefix={{branch}}-
+            type=sha,prefix={{branch}}-,enable=${{ github.event_name != 'pull_request' }}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
@@ -82,13 +90,15 @@ jobs:
           context: ${{ inputs.context-path }}
           file: ${{ inputs.context-path }}/${{ inputs.containerfile-path }}
           platforms: ${{ inputs.platforms }}
-          push: true
+          build-args: ${{ inputs.base-image != '' && format('BASE_IMAGE={0}', inputs.base-image) || '' }}
+          push: ${{ env.PUSH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Generate artifact attestation
+        if: ${{ env.PUSH == 'true' }}
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}

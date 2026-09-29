@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+          enable-cache: true
+
+      - name: Check that uv.lock is up to date
+        run: uv lock --check
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-groups
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Run tests
+        run: uv run pytest
+
+      # Container images run on Alpine (musl), where protobuf uses its pure-Python
+      # runtime, which behaves differently from the C runtime used above.
+      - name: Run agent tests with the pure-Python protobuf runtime
+        run: uv run pytest tests/agent
+        env:
+          PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
+
+      - name: Check that images/python/requirements.txt is up to date
+        run: |
+          make --always-make images/python/requirements.txt
+          git diff --exit-code images/python/requirements.txt

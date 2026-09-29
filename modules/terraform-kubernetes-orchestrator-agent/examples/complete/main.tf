@@ -20,13 +20,14 @@ module "orchestrator_agent" {
   }
 
   task_broker = {
-    # Persist A2A tasks in PostgreSQL (set broker.backend: postgres in server.yaml).
+    # Persist A2A tasks in PostgreSQL (set a2a.store.backend: sql and
+    # database_url_secret: task_broker.database_url in server.yaml).
     database_url = var.agent_database_url
   }
 
   agent_secrets = {
     # Bearer tokens for downstream A2A agents, referenced as $${WEATHER_AGENT_TOKEN}
-    # in the agent.yaml a2a_servers[].headers.
+    # in an A2AAgent capability's headers in agent.yaml.
     weather_agent_token = var.weather_agent_token
   }
 

@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that provides weather information.
 
 - `get_weather_forecast`: Get weather forecasts for latitude/longitude coordinates.
 - `get_locations`: Find matching locations and coordinates by place name.
-- `locations://cache` resource: Access cached location lookup results.
+- `locations://cache` resource: Access the most recent location lookup results (up to 256).
 - `get_weather_prompt` prompt: Generate a weather-related prompt string.
 
 ## Container Image
@@ -41,6 +41,7 @@ The HTTP MCP endpoint is exposed at `/mcp`.
 
 - `HOST`: `0.0.0.0` by default. HTTP server bind host.
 - `PORT`: `8000` by default. HTTP server bind port.
+- `HTTP_TIMEOUT_S`: `10` by default. Timeout in seconds for Open-Meteo API requests.
 
 ## Build Locally
 
