@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """MCP Customer Database Server."""
 
+import asyncio
+import json
 import logging
 import os
 import re
@@ -9,6 +11,12 @@ from typing import Annotated, Any, Literal
 import pg8000.dbapi
 import typer
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.dependencies import get_http_headers
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.base import ToolResult
+from mcp_types import CallToolRequestParams
 from pydantic import BaseModel, Field
 
 import agentic.logging
@@ -28,6 +36,13 @@ PGPASSWORD = os.environ.get("PGPASSWORD", "")
 QUERY_TIMEOUT_S = float(os.environ.get("QUERY_TIMEOUT_S", "5"))
 QUERY_MAX_ROWS = int(os.environ.get("QUERY_MAX_ROWS", "500"))
 
+# Per-tool caller authorization. AUTH_TOOL_ROLES is a JSON object mapping a tool name to the
+# role its callers must hold; setting it makes the other three required.
+AUTH_TOOL_ROLES: dict[str, str] = json.loads(os.environ.get("AUTH_TOOL_ROLES") or "{}")
+AUTH_JWKS_URI = os.environ.get("AUTH_JWKS_URI")
+AUTH_ISSUER = os.environ.get("AUTH_ISSUER")
+AUTH_AUDIENCE = os.environ.get("AUTH_AUDIENCE")
+
 READ_ONLY_KEYWORDS = frozenset({"SELECT", "WITH", "EXPLAIN"})
 
 # Leading whitespace, `-- line` comments, and `/* block */` comments.
@@ -39,7 +54,76 @@ _LEADING_NOISE = re.compile(r"\A(?:\s+|--[^\n]*(?:\n|\Z)|/\*.*?\*/)*", re.DOTALL
 # -------------------------------------------------------------------------------------------------
 
 
-mcp = FastMCP("MCP Customer Database Server")
+def _bearer_token() -> str | None:
+    """The bearer token on the HTTP request carrying the current MCP message, if any."""
+    scheme, _, token = (
+        get_http_headers(include={"authorization"})
+        .get("authorization", "")
+        .partition(" ")
+    )
+    return token if scheme.lower() == "bearer" and token else None
+
+
+class ToolRoleMiddleware(Middleware):
+    """Authorize calls to the tools named in ``AUTH_TOOL_ROLES``, one call at a time.
+
+    Connecting, listing tools, and calling any other tool need no credential. A call
+    to a listed tool must arrive on an HTTP request carrying a bearer access token
+    signed by a key at ``AUTH_JWKS_URI``, issued by ``AUTH_ISSUER`` for
+    ``AUTH_AUDIENCE``, and holding the tool's role as a Keycloak client role on that
+    audience (``resource_access.<audience>.roles``). A refused call is a tool error,
+    not an HTTP 401. The stdio transport is never checked.
+    """
+
+    def __init__(self, verifier: JWTVerifier, tool_roles: dict[str, str]) -> None:
+        self.verifier = verifier
+        self.tool_roles = tool_roles
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[CallToolRequestParams],
+        call_next: CallNext[CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        tool = context.message.name
+        role = self.tool_roles.get(tool)
+        ctx = context.fastmcp_context
+        if role is None or (ctx is not None and ctx.transport == "stdio"):
+            return await call_next(context)
+
+        token = _bearer_token()
+        access = await self.verifier.verify_token(token) if token else None
+        if access is None:
+            logger.warning("Refused %s: no valid bearer token", tool)
+            raise ToolError(f"Calling {tool} requires a valid access token.")
+        client_roles = access.claims.get("resource_access", {}).get(AUTH_AUDIENCE, {})
+        if role not in client_roles.get("roles", []):
+            logger.warning("Refused %s: %s lacks role %r", tool, access.client_id, role)
+            raise ToolError(f"Calling {tool} requires the {role!r} role.")
+        return await call_next(context)
+
+
+def build_middleware() -> list[Middleware]:
+    """Build the per-tool authorization middleware from the environment.
+
+    Raises:
+        ValueError: ``AUTH_TOOL_ROLES`` is set but another AUTH_* variable is not.
+    """
+    if not AUTH_TOOL_ROLES:
+        return []
+    required = {
+        "AUTH_JWKS_URI": AUTH_JWKS_URI,
+        "AUTH_ISSUER": AUTH_ISSUER,
+        "AUTH_AUDIENCE": AUTH_AUDIENCE,
+    }
+    if missing := sorted(name for name, value in required.items() if not value):
+        raise ValueError(f"AUTH_TOOL_ROLES is set, so {missing} must be set as well")
+    verifier = JWTVerifier(
+        jwks_uri=AUTH_JWKS_URI, issuer=AUTH_ISSUER, audience=AUTH_AUDIENCE
+    )
+    return [ToolRoleMiddleware(verifier, AUTH_TOOL_ROLES)]
+
+
+mcp = FastMCP("MCP Customer Database Server", middleware=build_middleware())
 
 
 def _connect() -> pg8000.dbapi.Connection:
@@ -177,6 +261,13 @@ def query_database(sql: str) -> QueryResult:
         rows=[dict(zip(columns, row, strict=True)) for row in rows[:QUERY_MAX_ROWS]],
         truncated=len(rows) > QUERY_MAX_ROWS,
     )
+
+
+# A role mapped to a tool that does not exist would leave the intended tool open.
+if unknown := set(AUTH_TOOL_ROLES) - {
+    tool.name for tool in asyncio.run(mcp.list_tools())
+}:
+    raise ValueError(f"AUTH_TOOL_ROLES names unknown tools: {sorted(unknown)}")
 
 
 # -------------------------------------------------------------------------------------------------

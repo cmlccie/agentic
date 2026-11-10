@@ -26,6 +26,27 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO customers_reader;
 
 Query results are not logged, because they may contain personal data.
 
+### Caller Authorization
+
+Off by default: any caller that can reach the server can call every tool. `AUTH_TOOL_ROLES`
+turns it on **per tool call** for the HTTP transport (stdio is never checked). It is a JSON
+object mapping a tool name to the role its callers must hold, for example
+`{"query_database": "query"}`.
+
+- Connecting, listing tools, and calling a tool that is not in the map need no credential,
+  so a gateway's health check and tool discovery keep working.
+- A call to a mapped tool must arrive on a request carrying `Authorization: Bearer <access
+  token>`. The token must be a JWT signed by a key published at `AUTH_JWKS_URI`, with `iss`
+  equal to `AUTH_ISSUER` and `aud` containing `AUTH_AUDIENCE`, and it must hold the tool's
+  role as a Keycloak client role on the audience client
+  (`resource_access.<AUTH_AUDIENCE>.roles`).
+- The token is read from the request that carries the call, not from the one that opened
+  the session.
+- A refused call is returned as a tool error (`isError: true`), not as an HTTP `401`.
+
+The server fails at startup if `AUTH_TOOL_ROLES` is set and any of the other three is not,
+or if it names a tool that does not exist.
+
 ## Container Image
 
 This project is automatically built and published as a multi-architecture container image supporting both `amd64` and `arm64` platforms.
@@ -65,6 +86,11 @@ The HTTP MCP endpoint is exposed at `/mcp`.
 - `PGPORT`: `5432` by default. PostgreSQL port.
 - `QUERY_TIMEOUT_S`: `5` by default. Per-query statement timeout in seconds.
 - `QUERY_MAX_ROWS`: `500` by default. Maximum rows returned by `query_database`.
+- `AUTH_TOOL_ROLES`: Unset by default. JSON object mapping a tool name to the role required
+  to call it; setting it turns caller authorization on and makes the next three required.
+- `AUTH_JWKS_URI`: JWKS endpoint of the token issuer.
+- `AUTH_ISSUER`: Expected `iss` claim.
+- `AUTH_AUDIENCE`: Expected `aud` claim, and the Keycloak client whose roles are checked.
 - `HOST`: `0.0.0.0` by default. HTTP server bind host.
 - `PORT`: `8000` by default. HTTP server bind port.
 

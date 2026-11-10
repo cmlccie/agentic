@@ -71,6 +71,9 @@ class FakeCursor:
     def fetchmany(self, size):
         return self.rows[:size]
 
+    def fetchall(self):
+        return self.rows
+
 
 class FakeConnection:
     def __init__(self, cursor):
@@ -134,3 +137,111 @@ def test_rejected_query_never_connects(db, monkeypatch):
     monkeypatch.setattr(db, "_connect", fail)
     with pytest.raises(ToolError, match="read-only"):
         call_tool(db.mcp, "query_database", {"sql": "DROP TABLE customers"})
+
+
+# -------------------------------------------------------------------------------------------------
+# Caller authentication and authorization
+# -------------------------------------------------------------------------------------------------
+
+ISSUER = "https://keycloak.example/realms/lab"
+AUDIENCE = "customer-database-mcp-server"
+
+
+@pytest.fixture
+def auth(monkeypatch):
+    """The server module with ``query_database`` requiring the ``query`` role, plus a signing key."""
+    from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+
+    monkeypatch.setenv("AUTH_TOOL_ROLES", '{"query_database": "query"}')
+    monkeypatch.setenv("AUTH_JWKS_URI", "http://keycloak.example/certs")
+    monkeypatch.setenv("AUTH_ISSUER", ISSUER)
+    monkeypatch.setenv("AUTH_AUDIENCE", AUDIENCE)
+    module = load_server("customer_database_server")
+
+    # Same issuer and audience as the server's verifier, but with a local key
+    # instead of a JWKS fetch.
+    key = RSAKeyPair.generate()
+    (middleware,) = (
+        m for m in module.mcp.middleware if isinstance(m, module.ToolRoleMiddleware)
+    )
+    middleware.verifier = JWTVerifier(
+        public_key=key.public_key, issuer=ISSUER, audience=AUDIENCE
+    )
+    monkeypatch.setattr(module, "_connect", lambda: FakeConnection(FakeCursor([])))
+    return module, key
+
+
+def _token(key, *, audience=AUDIENCE, roles=("query",), roles_on=AUDIENCE):
+    return key.create_token(
+        subject="service-account-customer-database-agent",
+        issuer=ISSUER,
+        audience=audience,
+        additional_claims={"resource_access": {roles_on: {"roles": list(roles)}}},
+    )
+
+
+def _present(monkeypatch, module, token):
+    """Make ``token`` the bearer on the request carrying the next tool calls."""
+    monkeypatch.setattr(module, "_bearer_token", lambda: token)
+
+
+def test_auth_is_off_by_default(db):
+    assert db.build_middleware() == []
+
+
+def test_auth_requires_every_setting(monkeypatch):
+    monkeypatch.setenv("AUTH_TOOL_ROLES", '{"query_database": "query"}')
+    monkeypatch.setenv("AUTH_ISSUER", ISSUER)
+    with pytest.raises(ValueError, match="AUTH_AUDIENCE.*AUTH_JWKS_URI"):
+        load_server("customer_database_server")
+
+
+def test_auth_rejects_unknown_tool_names(monkeypatch):
+    monkeypatch.setenv("AUTH_TOOL_ROLES", '{"query_databse": "query"}')
+    monkeypatch.setenv("AUTH_JWKS_URI", "http://keycloak.example/certs")
+    monkeypatch.setenv("AUTH_ISSUER", ISSUER)
+    monkeypatch.setenv("AUTH_AUDIENCE", AUDIENCE)
+    with pytest.raises(ValueError, match="unknown tools.*query_databse"):
+        load_server("customer_database_server")
+
+
+def test_unauthenticated_caller_lists_and_calls_open_tools(auth):
+    module, _ = auth
+    assert list_tool_names(module.mcp) == {"get_schema", "query_database"}
+    call_tool(module.mcp, "get_schema")
+
+
+def test_unauthenticated_caller_is_refused_a_protected_tool(auth):
+    module, _ = auth
+    with pytest.raises(ToolError, match="requires a valid access token"):
+        call_tool(module.mcp, "query_database", {"sql": "SELECT 1"})
+
+
+def test_invalid_token_still_calls_open_tools(auth, monkeypatch):
+    module, _ = auth
+    _present(monkeypatch, module, "not-a-jwt")
+    call_tool(module.mcp, "get_schema")
+
+
+def test_token_with_the_role_calls_a_protected_tool(auth, monkeypatch):
+    module, key = auth
+    _present(monkeypatch, module, _token(key))
+    call_tool(module.mcp, "query_database", {"sql": "SELECT 1"})
+
+
+@pytest.mark.parametrize(
+    ("claims", "error"),
+    [
+        ({"roles": ()}, "requires the 'query' role"),
+        ({"roles": ("other",)}, "requires the 'query' role"),
+        # the role on another client does not count
+        ({"roles_on": "litellm"}, "requires the 'query' role"),
+        # a gateway token is not a token for this server
+        ({"audience": "litellm"}, "requires a valid access token"),
+    ],
+)
+def test_other_tokens_are_refused_a_protected_tool(auth, monkeypatch, claims, error):
+    module, key = auth
+    _present(monkeypatch, module, _token(key, **claims))
+    with pytest.raises(ToolError, match=error):
+        call_tool(module.mcp, "query_database", {"sql": "SELECT 1"})
