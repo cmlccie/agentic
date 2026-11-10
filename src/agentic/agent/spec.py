@@ -31,10 +31,13 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
 
+import httpx2
 from pydantic import ValidationError
 from pydantic_ai import Agent, AgentSpec
+from pydantic_ai.capabilities import MCP as _MCP
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import UserError
+from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.providers import Provider, infer_provider, infer_provider_class
 from pydantic_ai_harness import (
@@ -51,6 +54,7 @@ from pydantic_ai_harness.repair_tool_arguments import (
     RepairToolArguments as _HarnessRepairToolArguments,
 )
 
+from . import workload_auth
 from .a2a_client import A2AAgent
 from .config import ConfigError, Secrets, expand_secret_refs_deep, read_yaml
 
@@ -104,10 +108,35 @@ HARNESS_CAPABILITIES: tuple[type[AbstractCapability[Any]], ...] = (
     SpendLimits,
 )
 
+
+@dataclass(init=False)
+class MCP(_MCP[Any]):
+    """The built-in ``MCP`` capability, with workload identity for the AI gateway.
+
+    Identical to Pydantic AI's ``MCP`` unless workload auth is enabled and the
+    server URL is on the gateway's origin (see `agentic.agent.workload_auth`).
+    The connection then authenticates with the agent's access token, so
+    `agent.yaml` carries no ``Authorization`` header for it.
+    """
+
+    def _build_local(self, url: str) -> Any:
+        auth = workload_auth.auth_for(url)
+        if auth is None:
+            return super()._build_local(url)
+        return MCPToolset(
+            url,
+            auth=auth,
+            headers=self.headers or None,
+            include_instructions=True,
+            id=self._derive_id(url),
+        )
+
+
 #: Every custom capability type `agent.yaml` may use (in addition to the
-#: Pydantic AI built-ins).
+#: Pydantic AI built-ins). ``MCP`` replaces the built-in of the same name.
 CUSTOM_CAPABILITIES: tuple[type[AbstractCapability[Any]], ...] = (
     A2AAgent,
+    MCP,
     *HARNESS_CAPABILITIES,
 )
 
@@ -202,6 +231,18 @@ def endpoint_provider_factory(
         if provider_name not in _ENDPOINT_PROVIDERS:
             return infer_provider(provider_name)
         provider_cls = infer_provider_class(provider_name)
+        if (auth := workload_auth.auth_for(base_url)) is not None:
+            # Workload identity replaces the API key: the client's auth sets the
+            # bearer token on every request, overriding the SDK's own header.
+            # Timeouts match the client Pydantic AI creates for itself.
+            http_client = httpx2.AsyncClient(
+                auth=auth, timeout=httpx2.Timeout(timeout=600, connect=5)
+            )
+            return provider_cls(
+                base_url=base_url,
+                api_key=workload_auth.PLACEHOLDER_API_KEY,
+                http_client=http_client,
+            )
         return provider_cls(base_url=base_url, api_key=api_key or "api-key-not-set")
 
     return factory

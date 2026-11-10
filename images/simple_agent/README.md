@@ -295,6 +295,25 @@ auth:
 
 The earlier names `openai_compatible.base_url`, `openai_compatible.api_key`, and `task_broker.database_url` are still read.
 
+### Workload identity (SPIFFE)
+
+Instead of a static `model.api_key`, the agent can authenticate to an AI gateway with a short-lived, attested identity: it fetches a JWT-SVID from the SPIFFE Workload API, exchanges it at an OAuth token endpoint as a federated client assertion (`client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-spiffe`), and sends the resulting access token as the bearer on every gateway request. The token is cached and refreshed 30 seconds before it expires.
+
+It is configured by environment variables and is off unless the token URL is set:
+
+| Variable                         | Meaning                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------ |
+| `AGENT_WORKLOAD_AUTH_TOKEN_URL`  | Token endpoint. Setting it turns workload identity on                                |
+| `AGENT_WORKLOAD_AUTH_AUDIENCE`   | Audience requested in the JWT-SVID (for Keycloak, the realm's issuer URL)            |
+| `AGENT_WORKLOAD_AUTH_BASE_URL`   | The gateway's base URL. Only requests to this origin carry the token                 |
+| `SPIFFE_ENDPOINT_SOCKET`         | Workload API socket, e.g. `unix:///spiffe-workload-api/spire-agent.sock`             |
+
+When enabled:
+
+- `vllm:` models whose `model.base_url` is on the gateway origin use the access token; `model.api_key` is not needed.
+- `MCP` capabilities whose `url` is on the gateway origin use the same token. Do not set an `Authorization` header for them in `agent.yaml`.
+- Every other host is unaffected, and never receives the token.
+
 ## Hot reload
 
 The agent watches its config and secrets directories and reloads when anything changes (and on `SIGHUP`). A reload builds a new agent from the files and swaps it in:
